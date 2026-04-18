@@ -1,50 +1,197 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="RunQuest">
-  <meta name="mobile-web-app-capable" content="yes">
-  <title>RunQuest 🏃‍♀️</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: #fafaf8; -webkit-text-size-adjust: 100%; }
-    #root { height: 100%; }
-    #loading {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: linear-gradient(160deg, #fff9f0 0%, #f0faf5 50%, #f5f0ff 100%);
-      font-family: sans-serif; color: #9e9890;
-      z-index: 9999; transition: opacity 0.4s;
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ─── INTERVAL PARSER ──────────────────────────────────────────────────────────
+// Converts a workout description string into a list of {label, seconds} intervals
+function parseIntervals(desc) {
+  if (!desc) return [];
+  const d = desc.toLowerCase();
+
+  // Helper: convert "5 min", "90s", "2.5 min", "60 seconds" etc. to seconds
+  function toSec(val, unit) {
+    const n = parseFloat(val);
+    if (!n) return 0;
+    if (unit.startsWith('s')) return Math.round(n);
+    return Math.round(n * 60);
+  }
+
+  // Helper: clean label for speech (remove emoji, tidy)
+  function clean(s) {
+    return s.replace(/[🏃🚶‍♀️💪🔥⚡🎵🎶⏱️🌟🎉😴]/gu,'').replace(/\s+/g,' ').trim();
+  }
+
+  const intervals = [];
+
+  // ── Pattern: warmup walk + repeating pairs  ───────────────────────────────
+  // "Walk 5 min, then jog 60s / walk 90s × 8"
+  // "Walk 5 min, then jog 90s / walk 2 min × 6"
+  const warmupRepeat = d.match(/walk\s+([\d.]+)\s*(min|s)[^,]*,\s*then\s*(jog|run)\s+([\d.]+)\s*(min|s)\s*[\/\\]\s*walk\s+([\d.]+)\s*(min|s)\s*[×x]\s*(\d+)/);
+  if (warmupRepeat) {
+    const [,wv,wu,,jv,ju,wv2,wu2,reps] = warmupRepeat;
+    intervals.push({ label: `Walk ${wv} ${wu === 'min' ? 'minutes' : 'seconds'}`, seconds: toSec(wv,wu) });
+    for (let i = 0; i < parseInt(reps); i++) {
+      intervals.push({ label: `Jog ${jv} ${ju === 'min' ? 'minutes' : 'seconds'}`, seconds: toSec(jv,ju) });
+      intervals.push({ label: `Walk ${wv2} ${wu2 === 'min' ? 'minutes' : 'seconds'}`, seconds: toSec(wv2,wu2) });
     }
-    #loading.done { opacity: 0; pointer-events: none; }
-    #loading .logo { font-size: 52px; margin-bottom: 16px; }
-    #loading .name { font-size: 30px; font-weight: 800; color: #2d2a26; margin-bottom: 6px; }
-    #loading .sub { font-size: 14px; font-weight: 600; }
-    #loading .bar-wrap { width: 200px; height: 6px; background: #e8e4df; border-radius: 999px; margin-top: 32px; overflow: hidden; }
-    #loading .bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80, #60a5fa); border-radius: 999px; animation: loadBar 1.8s ease forwards; }
-    @keyframes loadBar { to { width: 100%; } }
-  </style>
-</head>
-<body>
-  <div id="loading">
-    <div class="logo">🏃‍♀️</div>
-    <div class="name">RunQuest</div>
-    <div class="sub">Your friendly training buddy</div>
-    <div class="bar-wrap"><div class="bar"></div></div>
-  </div>
-  <div id="root"></div>
+    return intervals;
+  }
 
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  // ── Pattern: walk warmup + sequence × N ──────────────────────────────────
+  // "Walk 5 min, then: 90s jog, 90s walk, 3 min jog, 3 min walk — twice!"
+  // "Walk 5 min, 3 min jog, 90s walk, 5 min jog, 2.5 min walk × 2"
+  const seqRepeat = d.match(/walk\s+([\d.]+)\s*(min|s)[^,]*[,:]?\s*then[:\s]*(.*?)(?:\s*[×x—-]\s*(\d+)|twice|x\s*(\d+))?$/i);
+  if (seqRepeat) {
+    const [,wv,wu,,seqPart,repsA,,repsB] = seqRepeat;
+    const reps = parseInt(repsA || repsB || (d.includes('twice') ? 2 : 1));
+    intervals.push({ label: `Walk ${wv} ${wu === 'min' ? 'minutes' : 'seconds'}`, seconds: toSec(wv,wu) });
+    // Parse sequence items: "90s jog", "3 min walk", "5 min jog"
+    const items = (seqPart || '').split(/,\s*/);
+    const seqIntervals = [];
+    for (const item of items) {
+      const m = item.match(/([\d.]+)\s*(min|s|minutes|seconds)\s*(jog|run|walk|uphill|downhill|easy|hard|steady)/i)
+             || item.match(/(jog|run|walk|easy|hard)\s+([\d.]+)\s*(min|s|minutes|seconds)/i);
+      if (m) {
+        const isFirstForm = m[3]; // "90s jog" form
+        const v = isFirstForm ? m[1] : m[2];
+        const u = isFirstForm ? m[2] : m[3];
+        const act = isFirstForm ? m[3] : m[1];
+        const label = act.includes('jog') || act.includes('run') || act.includes('hard')
+          ? `${act.charAt(0).toUpperCase()+act.slice(1)} ${v} ${u.startsWith('s') ? 'seconds' : 'minutes'}`
+          : `Walk ${v} ${u.startsWith('s') ? 'seconds' : 'minutes'}`;
+        seqIntervals.push({ label, seconds: toSec(v, u) });
+      }
+    }
+    if (seqIntervals.length > 0) {
+      for (let i = 0; i < reps; i++) seqIntervals.forEach(s => intervals.push({...s}));
+      return intervals;
+    }
+  }
 
-  <script type="text/babel" data-presets="react">
-    const { useState, useEffect } = React;
+  // ── Pattern: explicit list without warmup ─────────────────────────────────
+  // "Walk 5 min, jog 5 min, walk 3 min — 3 times!"
+  // "Walk 5 min, jog 8 min, walk 5 min, jog 8 min"
+  // "5 min easy, 10 min steady, 5 min easy"  (tempo)
+  const listRepeat = d.match(/(.*?)(?:[×x—-]\s*(\d+)|(\d+)\s*times?)?\s*[!.]*$/i);
+  if (listRepeat) {
+    const listPart = listRepeat[1] || d;
+    const reps = parseInt(listRepeat[2] || listRepeat[3] || 1);
+    const chunks = listPart.split(/,\s*/);
+    const parsed = [];
+    for (const chunk of chunks) {
+      // "walk N min/s", "jog N min/s", "run N min/s", "N min easy/steady/hard/tempo"
+      const m1 = chunk.match(/(walk|jog|run|easy|steady|hard|tempo|uphill|hills?)\s+([\d.]+)\s*(min|s|minutes|seconds)/i);
+      const m2 = chunk.match(/([\d.]+)\s*(min|s|minutes|seconds)\s+(walk|jog|run|easy|steady|hard|tempo|warm.up|cool.?down)/i);
+      const m3 = chunk.match(/([\d.]+)\s*(min|s|minutes|seconds)\s+rounds?.*?([\d.]+)\s*(min|s)\s*(run|jog|hard|fast)/i); // "4 rounds: run 3 min"
+      if (m1) {
+        const act = m1[1]; const v = m1[2]; const u = m1[3];
+        const isRun = /jog|run|hard|tempo|steady|uphill/.test(act);
+        parsed.push({ label: `${isRun ? act.charAt(0).toUpperCase()+act.slice(1) : 'Walk'} ${v} ${u.startsWith('s') ? 'seconds' : 'minutes'}`, seconds: toSec(v,u) });
+      } else if (m2) {
+        const v = m2[1]; const u = m2[2]; const act = m2[3];
+        const isRun = /jog|run|hard|tempo|steady/.test(act);
+        parsed.push({ label: `${isRun ? 'Run' : 'Walk'} ${v} ${u.startsWith('s') ? 'seconds' : 'minutes'}`, seconds: toSec(v,u) });
+      }
+    }
+    if (parsed.length >= 2) {
+      const result = [];
+      for (let i = 0; i < reps; i++) parsed.forEach(p => result.push({...p}));
+      return result;
+    }
+  }
 
+  // ── Pattern: N rounds of A/B (intervals, hills) ───────────────────────────
+  // "Walk 5 min, 4 rounds: run hard 3 min, walk 2 min"
+  // "Walk 5 min, 6 rounds: run uphill 90s, walk back"
+  const roundsMatch = d.match(/walk\s+([\d.]+)\s*(min|s).*?(\d+)\s*rounds?[:\s]+(run|jog)\s*(?:hard|uphill)?\s*([\d.]+)\s*(min|s)[,\s]+(walk|easy)\s*([\d.]+)?\s*(min|s|back)?/i);
+  if (roundsMatch) {
+    const [,wv,wu,reps,,rv,ru,,wv2,wu2] = roundsMatch;
+    intervals.push({ label: `Walk ${wv} minutes`, seconds: toSec(wv,wu) });
+    const walkSec = wv2 ? toSec(wv2, wu2||'s') : 60; // "walk back" = ~60s
+    for (let i = 0; i < parseInt(reps); i++) {
+      intervals.push({ label: `Run hard ${rv} ${ru.startsWith('s') ? 'seconds' : 'minutes'}`, seconds: toSec(rv,ru) });
+      intervals.push({ label: `Walk recovery`, seconds: walkSec });
+    }
+    return intervals;
+  }
+
+  // ── Pattern: fartlek / easy run with surges ───────────────────────────────
+  // "30 min easy with 6 random 1-min bursts"
+  const fartlek = d.match(/([\d.]+)\s*min\s*easy.*?(\d+).*?([\d.]+)[- ](min|s)\s*(burst|surge|pickup)/i);
+  if (fartlek) {
+    const [,totalMin,bursts,bLen,bUnit] = fartlek;
+    const total = parseFloat(totalMin) * 60;
+    const n = parseInt(bursts);
+    const bSec = toSec(bLen, bUnit);
+    const gap = Math.floor((total - n * bSec) / (n + 1));
+    intervals.push({ label: `Easy running`, seconds: gap });
+    for (let i = 0; i < n; i++) {
+      intervals.push({ label: `Speed burst — go fast!`, seconds: bSec });
+      if (i < n - 1) intervals.push({ label: `Easy running`, seconds: gap });
+    }
+    intervals.push({ label: `Easy running cool down`, seconds: gap });
+    return intervals;
+  }
+
+  // ── Pattern: simple straight run / walk warmup + run ─────────────────────
+  // "Walk 5 min warm-up, then RUN 20 minutes nonstop"
+  // "Walk 5 min, then run 25 minutes"
+  const simpleRun = d.match(/walk\s+([\d.]+)\s*(min|s).*?(?:then\s+)?(?:run|jog)\s+(?:for\s+)?([\d.]+)\s*(min|s)/i);
+  if (simpleRun) {
+    const [,wv,wu,rv,ru] = simpleRun;
+    intervals.push({ label: `Walk ${wv} minutes — warm up`, seconds: toSec(wv,wu) });
+    intervals.push({ label: `Run ${rv} minutes — you've got this!`, seconds: toSec(rv,ru) });
+    return intervals;
+  }
+
+  // ── Pattern: easy/long run (just run for N min/miles) ────────────────────
+  // "Easy 3 miles", "4 easy miles", "Run 2 miles easy"
+  // For these just give a single "Run!" interval using the duration field
+  const easyRun = d.match(/([\d.]+)\s*(mi(?:les?)?|km)\s*easy|easy\s+([\d.]+)\s*(mi(?:les?)?|km)|run\s+([\d.]+)\s*(mi(?:les?)?|km)/i);
+  if (easyRun) {
+    return [{ label: `Easy run — steady comfortable pace`, seconds: null, openEnded: true }];
+  }
+
+  // ── Fallback: use duration if we can parse it ─────────────────────────────
+  return [{ label: `Go!`, seconds: null, openEnded: true }];
+}
+
+// ─── AUDIO ENGINE ─────────────────────────────────────────────────────────────
+function createBeep(audioCtx, type = 'start') {
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    if (type === 'start') {
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.1);
+    } else if (type === 'switch') {
+      osc.frequency.setValueAtTime(660, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.08);
+    } else if (type === 'done') {
+      osc.frequency.setValueAtTime(523, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(784, audioCtx.currentTime + 0.3);
+    } else if (type === 'countdown') {
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+    }
+    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (type === 'done' ? 0.6 : 0.25));
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + (type === 'done' ? 0.6 : 0.25));
+  } catch(e) {}
+}
+
+function speak(text) {
+  try {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 0.95;
+    utt.pitch = 1.05;
+    utt.volume = 1;
+    window.speechSynthesis.speak(utt);
+  } catch(e) {}
+}
 
 const LEVEL_REWARDS = {
   2:  { title:"Sunrise Runner",  emoji:"🌅", msg:"You're officially a runner! The sun is rising on your journey!" },
@@ -470,13 +617,266 @@ const STYLE=`
   .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);padding:12px 22px;border-radius:30px;font-family:var(--fh);font-size:15px;z-index:400;white-space:nowrap;animation:tIn 0.4s cubic-bezier(0.34,1.56,0.64,1);box-shadow:0 8px 28px rgba(0,0,0,0.14);color:white;}
   @keyframes tIn{from{opacity:0;transform:translateX(-50%) scale(0.7) translateY(-12px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
 
+  /* RUN COACH */
+  .rc-overlay{position:fixed;inset:0;z-index:600;display:flex;flex-direction:column;color:white;}
+  .rc-header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;}
+  .rc-close{background:rgba(255,255,255,0.15);border:none;color:white;border-radius:50%;width:38px;height:38px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .rc-total-time{font-family:var(--fh);font-size:18px;opacity:0.9;}
+  .rc-pause-btn{background:rgba(255,255,255,0.15);border:none;color:white;border-radius:20px;padding:6px 16px;font-family:var(--fh);font-size:14px;cursor:pointer;}
+  .rc-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 24px;text-align:center;}
+  .rc-interval-label{font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;opacity:0.7;margin-bottom:10px;}
+  .rc-action{font-family:var(--fh);font-size:36px;line-height:1.2;margin-bottom:16px;animation:rcPop 0.3s cubic-bezier(0.34,1.56,0.64,1);}
+  @keyframes rcPop{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}
+  .rc-countdown{font-family:var(--fh);font-size:72px;line-height:1;margin-bottom:8px;}
+  .rc-countdown.urgent{animation:rcPulse 0.5s ease infinite alternate;}
+  @keyframes rcPulse{from{opacity:1;transform:scale(1)}to{opacity:0.6;transform:scale(0.95)}}
+  .rc-next{font-size:13px;opacity:0.65;font-weight:600;}
+  .rc-dots{display:flex;align-items:center;gap:6px;padding:20px 18px 28px;flex-wrap:wrap;justify-content:center;}
+  .rc-dot{border-radius:50%;transition:all 0.3s;}
+  .rc-dot.done{opacity:0.4;}
+  .rc-dot.active{box-shadow:0 0 0 3px rgba(255,255,255,0.5);}
+  .rc-dot.future{opacity:0.25;}
+  .rc-done-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;}
+  .rc-done-emoji{font-size:72px;margin-bottom:16px;animation:luB 0.6s both;}
+  .rc-done-title{font-family:var(--fh);font-size:32px;margin-bottom:8px;}
+  .rc-done-sub{font-size:16px;opacity:0.8;font-weight:600;margin-bottom:32px;}
+  .rc-done-btn{background:rgba(255,255,255,0.2);border:2px solid rgba(255,255,255,0.5);color:white;border-radius:30px;padding:14px 36px;font-family:var(--fh);font-size:18px;cursor:pointer;}
+  .start-run-btn{width:100%;padding:13px;border:none;border-radius:var(--rs);font-family:var(--fh);font-size:15px;color:white;cursor:pointer;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform 0.15s;}
+  .start-run-btn:hover{transform:translateY(-2px);}
+
   /* LEVEL REWARDS LIST */
   .lv-row{background:var(--white);border:2px solid var(--border);border-radius:var(--rs);padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
   .lv-row.reached{border-color:#fde68a;background:#fef9ee;}
   .lv-row.locked{opacity:0.5;}
 `;
 
-function RunApp() {
+// ─── RUN COACH COMPONENT ──────────────────────────────────────────────────────
+function RunCoach({ workout, accentColor, onClose, onComplete }) {
+  const intervals = parseIntervals(workout.desc);
+  const isOpenEnded = intervals.length === 1 && intervals[0].openEnded;
+
+  const [phase, setPhase]           = useState('ready'); // ready | running | done
+  const [curIdx, setCurIdx]         = useState(0);
+  const [secsLeft, setSecsLeft]     = useState(intervals[0]?.seconds || 0);
+  const [paused, setPaused]         = useState(false);
+  const [elapsed, setElapsed]       = useState(0);
+  const [actionKey, setActionKey]   = useState(0); // triggers re-animation
+
+  const audioCtxRef = useRef(null);
+  const timerRef    = useRef(null);
+
+  function getAudioCtx() {
+    if (!audioCtxRef.current) {
+      try { audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+    }
+    return audioCtxRef.current;
+  }
+
+  function announceInterval(idx) {
+    const iv = intervals[idx];
+    if (!iv) return;
+    const ctx = getAudioCtx();
+    createBeep(ctx, idx === 0 ? 'start' : 'switch');
+    setTimeout(() => speak(iv.label), 200);
+    setActionKey(k => k + 1);
+  }
+
+  function startRun() {
+    setPhase('running');
+    setCurIdx(0);
+    setSecsLeft(intervals[0]?.seconds || 0);
+    setElapsed(0);
+    announceInterval(0);
+  }
+
+  // Main tick
+  useEffect(() => {
+    if (phase !== 'running' || paused) {
+      clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = setInterval(() => {
+      setElapsed(e => e + 1);
+      if (isOpenEnded) return; // open-ended: just count up
+
+      setSecsLeft(s => {
+        if (s <= 1) {
+          // move to next interval
+          setCurIdx(ci => {
+            const next = ci + 1;
+            if (next >= intervals.length) {
+              clearInterval(timerRef.current);
+              setPhase('done');
+              const ctx = getAudioCtx();
+              createBeep(ctx, 'done');
+              setTimeout(() => speak("Workout complete! Amazing job!"), 300);
+              return ci;
+            }
+            setSecsLeft(intervals[next].seconds);
+            announceInterval(next);
+            return next;
+          });
+          return 0;
+        }
+        // countdown beep at 3,2,1
+        if (s === 4) {
+          const ctx = getAudioCtx();
+          createBeep(ctx, 'countdown');
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [phase, paused, isOpenEnded]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    clearInterval(timerRef.current);
+    window.speechSynthesis?.cancel();
+  }, []);
+
+  const cur = intervals[curIdx] || {};
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const totalStr = `${mins}:${String(secs).padStart(2,'0')}`;
+
+  // Determine dot size and run/walk coloring
+  function dotColor(iv) {
+    const l = (iv.label || '').toLowerCase();
+    if (/walk|recovery|cool|easy|rest/.test(l)) return '#93c5fd'; // blue = easy
+    return '#86efac'; // green = run/effort
+  }
+  function dotSize(iv) {
+    if (!iv.seconds) return 12;
+    if (iv.seconds >= 300) return 18;
+    if (iv.seconds >= 120) return 14;
+    return 10;
+  }
+
+  const bgGrad = `linear-gradient(160deg, ${accentColor}dd 0%, ${accentColor}99 100%)`;
+
+  return (
+    <div className="rc-overlay" style={{background: bgGrad}}>
+
+      {/* READY SCREEN */}
+      {phase === 'ready' && (
+        <>
+          <div className="rc-header">
+            <button className="rc-close" onClick={onClose}>✕</button>
+            <div className="rc-total-time">{workout.duration}</div>
+            <div style={{width:38}}/>
+          </div>
+          <div className="rc-body">
+            <div style={{fontSize:56,marginBottom:16}}>🏃‍♀️</div>
+            <div style={{fontFamily:"var(--fh)",fontSize:28,marginBottom:8}}>{workout.title}</div>
+            <div style={{fontSize:14,opacity:0.8,fontWeight:600,marginBottom:32,lineHeight:1.6}}>{workout.desc}</div>
+            <div style={{fontSize:13,opacity:0.65,fontWeight:600,marginBottom:24}}>
+              {isOpenEnded ? '1 interval' : `${intervals.length} interval${intervals.length!==1?'s':''}`} · Make sure your volume is on!
+            </div>
+            {/* Preview dots */}
+            {!isOpenEnded && (
+              <div className="rc-dots" style={{marginBottom:32}}>
+                {intervals.map((iv,i) => (
+                  <div key={i} className="rc-dot future"
+                    style={{width:dotSize(iv),height:dotSize(iv),background:dotColor(iv)}}
+                    title={iv.label}
+                  />
+                ))}
+              </div>
+            )}
+            <button style={{background:'rgba(255,255,255,0.25)',border:'2px solid rgba(255,255,255,0.6)',color:'white',borderRadius:30,padding:'16px 48px',fontFamily:"var(--fh)",fontSize:22,cursor:'pointer',letterSpacing:1}}
+              onClick={startRun}>
+              GO! 🚀
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* RUNNING SCREEN */}
+      {phase === 'running' && (
+        <>
+          <div className="rc-header">
+            <button className="rc-close" onClick={onClose}>✕</button>
+            <div className="rc-total-time">⏱ {totalStr}</div>
+            <button className="rc-pause-btn" onClick={() => setPaused(p => !p)}>
+              {paused ? '▶ Resume' : '⏸ Pause'}
+            </button>
+          </div>
+
+          <div className="rc-body">
+            <div className="rc-interval-label">
+              {isOpenEnded ? 'NOW' : `Interval ${curIdx + 1} of ${intervals.length}`}
+            </div>
+            <div key={actionKey} className="rc-action">{cur.label}</div>
+            {!isOpenEnded && cur.seconds && (
+              <div className={`rc-countdown ${secsLeft <= 5 ? 'urgent' : ''}`}>
+                {secsLeft}
+              </div>
+            )}
+            {isOpenEnded && (
+              <div className="rc-countdown">{totalStr}</div>
+            )}
+            {!isOpenEnded && intervals[curIdx + 1] && (
+              <div className="rc-next">Up next: {intervals[curIdx + 1].label}</div>
+            )}
+            {paused && (
+              <div style={{marginTop:20,fontSize:16,fontWeight:800,opacity:0.7}}>⏸ Paused</div>
+            )}
+          </div>
+
+          {/* Dot timeline */}
+          {!isOpenEnded && (
+            <div className="rc-dots">
+              {intervals.map((iv, i) => {
+                const state = i < curIdx ? 'done' : i === curIdx ? 'active' : 'future';
+                return (
+                  <div key={i} className={`rc-dot ${state}`}
+                    style={{width:dotSize(iv), height:dotSize(iv), background:dotColor(iv)}}
+                    title={iv.label}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Open-ended finish button */}
+          {isOpenEnded && (
+            <div style={{padding:'0 20px 32px'}}>
+              <button style={{width:'100%',padding:14,background:'rgba(255,255,255,0.2)',border:'2px solid rgba(255,255,255,0.5)',color:'white',borderRadius:14,fontFamily:"var(--fh)",fontSize:17,cursor:'pointer'}}
+                onClick={() => { setPhase('done'); const ctx=getAudioCtx(); createBeep(ctx,'done'); setTimeout(()=>speak("Workout complete! Amazing job!"),300); }}>
+                ✓ Finish Run
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* DONE SCREEN */}
+      {phase === 'done' && (
+        <>
+          <div className="rc-header">
+            <div style={{width:38}}/>
+            <div className="rc-total-time">Total: {totalStr}</div>
+            <div style={{width:38}}/>
+          </div>
+          <div className="rc-done-screen">
+            <div className="rc-done-emoji">🎉</div>
+            <div className="rc-done-title">Workout Done!</div>
+            <div className="rc-done-sub">You ran for {totalStr} — incredible work!</div>
+            <button className="rc-done-btn" onClick={() => { onComplete(); onClose(); }}>
+              ✓ Mark Complete &amp; Save
+            </button>
+            <button style={{background:'none',border:'none',color:'white',opacity:0.6,marginTop:16,fontFamily:"var(--fh)",fontSize:15,cursor:'pointer'}} onClick={onClose}>
+              Close without saving
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function RunApp() {
   // ── PERSISTENT STATE — trails/xp/streak survive race/schedule changes ──────
   const load = (k,def) => { try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):def;}catch{return def;} };
   const save = (k,v) => { try{localStorage.setItem(k,JSON.stringify(v));}catch{} };
@@ -500,6 +900,7 @@ function RunApp() {
   const [draftDays,     setDraftDays]   = useState(null);
   const [levelUpPopup,  setLevelUpPopup]= useState(null);
   const [trailDetail,   setTrailDetail] = useState(null);
+  const [runCoach,      setRunCoach]    = useState(false);
 
   useEffect(()=>{ save("rq5_race",selectedRace); },[selectedRace]);
   useEffect(()=>{ save("rq5_rundays",runDays); },[runDays]);
@@ -647,6 +1048,16 @@ function RunApp() {
     <>
       <style>{STYLE}</style>
       {toast&&<div className="toast" style={{background:toast.color}}>{toast.msg}</div>}
+
+      {/* RUN COACH OVERLAY */}
+      {runCoach && today.type === 'run' && (
+        <RunCoach
+          workout={today}
+          accentColor={c}
+          onClose={() => setRunCoach(false)}
+          onComplete={completeDay}
+        />
+      )}
 
       {/* LEVEL UP */}
       {levelUpPopup&&(
@@ -807,7 +1218,16 @@ function RunApp() {
               )}
               {todayDone
                 ?<div className="wc-done" style={{color:c}}>✅ Done! Amazing work today!</div>
-                :<button className="wc-btn" style={{background:c}} onClick={completeDay}>{today.type==="run"?"✓ Mark Complete!":"✓ Rest Day Done!"}</button>
+                :<>
+                  {today.type==="run" && (
+                    <button className="start-run-btn" style={{background:c, boxShadow:`0 4px 18px ${c}55`}} onClick={()=>setRunCoach(true)}>
+                      <span style={{fontSize:20}}>▶</span> Start Run with Coach
+                    </button>
+                  )}
+                  <button className="wc-btn" style={{background:today.type==="run"?"#f0ede8":c, color:today.type==="run"?"#9e9890":"white", boxShadow: today.type==="run"?"none":`0 4px 14px rgba(0,0,0,0.15)`}} onClick={completeDay}>
+                    {today.type==="run"?"✓ Mark Complete Without Coach":"✓ Rest Day Done!"}
+                  </button>
+                </>
               }
             </div>
 
@@ -982,15 +1402,3 @@ function RunApp() {
     </>
   );
 }
-
-    const rootEl = document.getElementById('root');
-    const appRoot = ReactDOM.createRoot(rootEl);
-    appRoot.render(<RunApp />);
-    setTimeout(() => {
-      const loader = document.getElementById('loading');
-      if (loader) loader.classList.add('done');
-      setTimeout(() => { if (loader) loader.remove(); }, 500);
-    }, 100);
-  </script>
-</body>
-</html>
