@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="RunQuest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>RunQuest 🏃‍♀️</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #fafaf8; -webkit-text-size-adjust: 100%; }
+    #root { height: 100%; }
+    #loading {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: linear-gradient(160deg, #fff9f0 0%, #f0faf5 50%, #f5f0ff 100%);
+      font-family: sans-serif; color: #9e9890;
+      z-index: 9999; transition: opacity 0.4s;
+    }
+    #loading.done { opacity: 0; pointer-events: none; }
+    #loading .logo { font-size: 52px; margin-bottom: 16px; }
+    #loading .name { font-size: 30px; font-weight: 800; color: #2d2a26; margin-bottom: 6px; }
+    #loading .sub { font-size: 14px; font-weight: 600; }
+    #loading .bar-wrap { width: 200px; height: 6px; background: #e8e4df; border-radius: 999px; margin-top: 32px; overflow: hidden; }
+    #loading .bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80, #60a5fa); border-radius: 999px; animation: loadBar 1.8s ease forwards; }
+    @keyframes loadBar { to { width: 100%; } }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="logo">🏃‍♀️</div>
+    <div class="name">RunQuest</div>
+    <div class="sub">Your friendly training buddy</div>
+    <div class="bar-wrap"><div class="bar"></div></div>
+  </div>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect } = React;
+
+
+const LEVEL_REWARDS = {
+  2:  { title:"Sunrise Runner",  emoji:"🌅", msg:"You're officially a runner! The sun is rising on your journey!" },
+  3:  { title:"Trail Blazer",    emoji:"🌿", msg:"You're blazing your own trail. Keep those feet moving!" },
+  4:  { title:"Iron Legs",       emoji:"💪", msg:"Your legs are getting stronger every single day!" },
+  5:  { title:"Weekend Warrior", emoji:"⚡", msg:"Five levels deep — you're the real deal now!" },
+  6:  { title:"Road Ranger",     emoji:"🛤️", msg:"Six levels! You know every crack in the pavement by now." },
+  7:  { title:"Endurance Queen", emoji:"👸", msg:"Seven levels of pure dedication. Absolutely unstoppable!" },
+  8:  { title:"Mile Muncher",    emoji:"🍃", msg:"Eight levels and hundreds of miles. You eat distance for breakfast!" },
+  9:  { title:"Peak Performer",  emoji:"🏔️", msg:"Almost at the top — your fitness has reached new peaks!" },
+  10: { title:"Legend",          emoji:"🌟", msg:"LEVEL 10! You are a running LEGEND. Pure gold!" },
+};
+
+const TRAILS = [
+  { id:"inca",       name:"Inca Trail",           country:"Peru 🇵🇪",      miles:26,   color:"#d97706", bg:"#fef3c7", pill:"#fde68a", pillText:"#92400e", desc:"Ancient stone paths through the Andes to Machu Picchu",                difficulty:"Hard",     days:"4 days" },
+  { id:"torres",     name:"Torres del Paine",      country:"Chile 🇨🇱",     miles:50,   color:"#0ea5e9", bg:"#e0f2fe", pill:"#bae6fd", pillText:"#0c4a6e", desc:"Spectacular granite towers and turquoise lakes of Patagonia",            difficulty:"Hard",     days:"8–9 days" },
+  { id:"tmt",        name:"Tour du Mont Blanc",    country:"France/Italy/Switzerland", miles:110, color:"#8b5cf6", bg:"#ede9fe", pill:"#ddd6fe", pillText:"#4c1d95", desc:"A grand circuit around the highest peak in the Alps",           difficulty:"Moderate", days:"11 days" },
+  { id:"annapurna",  name:"Annapurna Circuit",     country:"Nepal 🇳🇵",     miles:128,  color:"#ef4444", bg:"#fee2e2", pill:"#fecaca", pillText:"#7f1d1d", desc:"Classic Himalayan loop over the Thorong La Pass at 17,769 ft",          difficulty:"Hard",     days:"12–16 days" },
+  { id:"k2",         name:"K2 Base Camp",          country:"Pakistan 🇵🇰",   miles:65,   color:"#6366f1", bg:"#eef2ff", pill:"#c7d2fe", pillText:"#1e1b4b", desc:"Through the Karakoram to the foot of the world's 2nd tallest peak",    difficulty:"Very Hard",days:"15 days" },
+  { id:"appalachian",name:"Appalachian Trail",     country:"USA 🇺🇸",        miles:2190, color:"#22c55e", bg:"#dcfce7", pill:"#bbf7d0", pillText:"#14532d", desc:"The legendary thru-hike spanning 14 states from Georgia to Maine",     difficulty:"Epic",     days:"5–7 months" },
+  { id:"kilimanjaro",name:"Mt. Kilimanjaro",       country:"Tanzania 🇹🇿",   miles:38,   color:"#f97316", bg:"#ffedd5", pill:"#fed7aa", pillText:"#7c2d12", desc:"The Marangu Route up Africa's highest peak — the Roof of Africa",      difficulty:"Hard",     days:"5–6 days" },
+  { id:"camino",     name:"Camino de Santiago",    country:"Spain 🇪🇸",      miles:500,  color:"#f59e0b", bg:"#fef9c3", pill:"#fde68a", pillText:"#713f12", desc:"The ancient French Way pilgrimage across northern Spain to Santiago",  difficulty:"Moderate", days:"30 days" },
+  { id:"everest",    name:"Everest Base Camp",     country:"Nepal 🇳🇵",      miles:80,   color:"#64748b", bg:"#f1f5f9", pill:"#cbd5e1", pillText:"#0f172a", desc:"Trek through Khumbu Valley to the foot of the world's tallest mountain",difficulty:"Very Hard",days:"12–14 days" },
+  { id:"pct",        name:"Pacific Crest Trail",   country:"USA 🇺🇸",        miles:2653, color:"#10b981", bg:"#d1fae5", pill:"#6ee7b7", pillText:"#064e3b", desc:"From the Mexican border to Canada through desert and mountains",        difficulty:"Epic",     days:"4–6 months" },
+  { id:"laugavegur", name:"Laugavegur Trail",      country:"Iceland 🇮🇸",    miles:34,   color:"#06b6d4", bg:"#cffafe", pill:"#a5f3fc", pillText:"#164e63", desc:"Iceland's volcanic trail of hot springs, lava fields and glaciers",    difficulty:"Moderate", days:"4 days" },
+  { id:"westhighland",name:"West Highland Way",    country:"Scotland 🏴󠁧󠁢󠁳󠁣󠁴󠁿",  miles:96,   color:"#84cc16", bg:"#ecfccb", pill:"#d9f99d", pillText:"#1a2e05", desc:"Through lochs, glens and highlands from Glasgow to Fort William",     difficulty:"Moderate", days:"7 days" },
+  { id:"routeburn",  name:"Routeburn Track",       country:"New Zealand 🇳🇿", miles:20,   color:"#34d399", bg:"#d1fae5", pill:"#6ee7b7", pillText:"#064e3b", desc:"One of NZ's Great Walks through alpine and fiordland scenery",         difficulty:"Moderate", days:"2–4 days" },
+  { id:"overland",   name:"Overland Track",        country:"Tasmania 🇦🇺",   miles:48,   color:"#fb7185", bg:"#ffe4e6", pill:"#fecdd3", pillText:"#881337", desc:"Tasmania's iconic trek through ancient wilderness and mountains",       difficulty:"Moderate", days:"6 days" },
+  { id:"jordan",     name:"Jordan Trail",          country:"Jordan 🇯🇴",     miles:403,  color:"#c2890a", bg:"#fef3c7", pill:"#fde68a", pillText:"#78350f", desc:"From Umm Qais to Aqaba — through Petra and the Wadi Rum desert",       difficulty:"Hard",     days:"36 days" },
+];
+
+// ─── SVG MEDALS ───────────────────────────────────────────────────────────────
+function MedalSVG({ trailId, size=80, earned=false, progress=0 }) {
+  const locked = !earned && progress < 100;
+  const M = {
+    inca:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="ig" cx="40%" cy="35%"><stop offset="0%" stopColor="#fbbf24"/><stop offset="100%" stopColor="#d97706"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#ig)"} stroke={locked?"#d1d5db":"#92400e"} strokeWidth="3"/>
+        <polygon points="40,14 45,28 60,28 48,37 52,52 40,43 28,52 32,37 20,28 35,28" fill={locked?"#d1d5db":"#78350f"} opacity="0.9"/>
+        <rect x="30" y="55" width="20" height="3" rx="1.5" fill={locked?"#d1d5db":"#92400e"}/>
+        <rect x="33" y="60" width="14" height="2" rx="1" fill={locked?"#d1d5db":"#92400e"}/>
+        <text x="40" y="75" textAnchor="middle" fontSize="7" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#7c2d12"}>INCA</text>
+      </svg>),
+    torres:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="tg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#38bdf8"/><stop offset="100%" stopColor="#0284c7"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#tg)"} stroke={locked?"#d1d5db":"#0c4a6e"} strokeWidth="3"/>
+        <path d="M18 52 L28 32 L34 38 L40 22 L46 35 L52 28 L62 52 Z" fill={locked?"#d1d5db":"#e0f2fe"} opacity="0.9"/>
+        <rect x="25" y="52" width="30" height="4" rx="2" fill={locked?"#c9d0db":"#bae6fd"} opacity="0.7"/>
+        <circle cx="25" cy="45" r="3" fill={locked?"#d1d5db":"#7dd3fc"}/>
+        <circle cx="55" cy="48" r="2.5" fill={locked?"#d1d5db":"#7dd3fc"}/>
+        <text x="40" y="74" textAnchor="middle" fontSize="6" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#0c4a6e"}>TORRES</text>
+      </svg>),
+    tmt:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="mtg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#c4b5fd"/><stop offset="100%" stopColor="#7c3aed"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#mtg)"} stroke={locked?"#d1d5db":"#4c1d95"} strokeWidth="3"/>
+        <path d="M15 54 L30 28 L40 38 L50 20 L65 54 Z" fill={locked?"#d1d5db":"#ede9fe"} opacity="0.85"/>
+        <path d="M30 54 L40 38 L50 54 Z" fill={locked?"#c9d0db":"#ddd6fe"}/>
+        <circle cx="50" cy="20" r="5" fill={locked?"#d1d5db":"#fef3c7"} stroke={locked?"#c9d0db":"#fbbf24"} strokeWidth="1.5"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#3b0764"}>MONT BLANC</text>
+      </svg>),
+    annapurna:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="ag" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#fca5a5"/><stop offset="100%" stopColor="#dc2626"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#ag)"} stroke={locked?"#d1d5db":"#7f1d1d"} strokeWidth="3"/>
+        <path d="M12 55 L25 35 L33 42 L40 20 L47 35 L56 26 L68 55 Z" fill={locked?"#d1d5db":"#fef2f2"} opacity="0.9"/>
+        <path d="M33 55 L40 40 L47 55 Z" fill={locked?"#c9d0db":"#fecaca"}/>
+        <path d="M37 20 Q40 16 43 20" stroke={locked?"#d1d5db":"#fef9c3"} strokeWidth="2" fill="none"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#450a0a"}>ANNAPURNA</text>
+      </svg>),
+    k2:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="k2g" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#818cf8"/><stop offset="100%" stopColor="#4338ca"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#k2g)"} stroke={locked?"#d1d5db":"#1e1b4b"} strokeWidth="3"/>
+        <path d="M20 56 L40 14 L60 56 Z" fill={locked?"#d1d5db":"#e0e7ff"} opacity="0.9"/>
+        <path d="M30 56 L40 36 L50 56 Z" fill={locked?"#c9d0db":"#c7d2fe"}/>
+        <circle cx="40" cy="14" r="4" fill={locked?"#d1d5db":"#fef9c3"} stroke={locked?"#c9d0db":"#fbbf24"} strokeWidth="1.5"/>
+        <text x="40" y="72" textAnchor="middle" fontSize="10" fontFamily="sans-serif" fontWeight="900" fill={locked?"#9ca3af":"#1e1b4b"}>K2</text>
+      </svg>),
+    appalachian:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="apg" cx="50%" cy="40%"><stop offset="0%" stopColor="#86efac"/><stop offset="100%" stopColor="#15803d"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#apg)"} stroke={locked?"#d1d5db":"#14532d"} strokeWidth="3"/>
+        <ellipse cx="25" cy="44" rx="10" ry="14" fill={locked?"#d1d5db":"#166534"} opacity="0.8"/>
+        <ellipse cx="40" cy="38" rx="12" ry="16" fill={locked?"#c9d0db":"#16a34a"} opacity="0.85"/>
+        <ellipse cx="55" cy="44" rx="10" ry="14" fill={locked?"#d1d5db":"#166534"} opacity="0.8"/>
+        <rect x="36" y="50" width="8" height="12" rx="1" fill={locked?"#d1d5db":"#854d0e"}/>
+        <path d="M26 35 L32 25 L38 35" fill={locked?"#c9d0db":"#bbf7d0"}/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#14532d"}>APPALACHIAN</text>
+      </svg>),
+    kilimanjaro:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="kg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#fdba74"/><stop offset="100%" stopColor="#ea580c"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#kg)"} stroke={locked?"#d1d5db":"#7c2d12"} strokeWidth="3"/>
+        <path d="M14 56 L40 16 L66 56 Z" fill={locked?"#d1d5db":"#fff7ed"} opacity="0.9"/>
+        <path d="M28 56 L40 36 L52 56 Z" fill={locked?"#c9d0db":"#fed7aa"}/>
+        <ellipse cx="40" cy="20" rx="10" ry="5" fill={locked?"#d1d5db":"white"} opacity="0.8"/>
+        <path d="M30 26 Q40 22 50 26" stroke={locked?"#d1d5db":"white"} strokeWidth="2.5" fill="none" opacity="0.7"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#431407"}>KILIMANJARO</text>
+      </svg>),
+    camino:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="cg" cx="50%" cy="40%"><stop offset="0%" stopColor="#fde047"/><stop offset="100%" stopColor="#ca8a04"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#cg)"} stroke={locked?"#d1d5db":"#713f12"} strokeWidth="3"/>
+        <rect x="37" y="15" width="6" height="36" rx="3" fill={locked?"#d1d5db":"#92400e"}/>
+        <rect x="28" y="25" width="24" height="6" rx="3" fill={locked?"#c9d0db":"#92400e"}/>
+        <circle cx="40" cy="52" r="6" fill={locked?"#d1d5db":"#dc2626"} stroke={locked?"#c9d0db":"#7f1d1d"} strokeWidth="1.5"/>
+        <path d="M38 49 L40 45 L42 49 L46 50 L43 53 L44 57 L40 55 L36 57 L37 53 L34 50 Z" fill={locked?"#c9d0db":"#fbbf24"}/>
+        <text x="40" y="75" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#713f12"}>CAMINO</text>
+      </svg>),
+    everest:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="eg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#94a3b8"/><stop offset="100%" stopColor="#334155"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#eg)"} stroke={locked?"#d1d5db":"#0f172a"} strokeWidth="3"/>
+        <path d="M10 56 L28 30 L37 42 L40 18 L43 42 L52 28 L70 56 Z" fill={locked?"#d1d5db":"#f8fafc"} opacity="0.9"/>
+        <path d="M33 56 L40 40 L47 56 Z" fill={locked?"#c9d0db":"#cbd5e1"}/>
+        <ellipse cx="40" cy="22" rx="8" ry="4" fill={locked?"#d1d5db":"white"} opacity="0.85"/>
+        <path d="M37 18 L40 10 L43 18" fill={locked?"#c9d0db":"#e2e8f0"}/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#0f172a"}>EVEREST</text>
+      </svg>),
+    pct:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#6ee7b7"/><stop offset="100%" stopColor="#059669"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#pg)"} stroke={locked?"#d1d5db":"#064e3b"} strokeWidth="3"/>
+        <path d="M15 50 Q20 30 30 35 Q35 20 40 25 Q45 15 55 20 Q60 30 65 50" stroke={locked?"#d1d5db":"#d1fae5"} strokeWidth="3" fill="none" strokeLinecap="round"/>
+        <circle cx="15" cy="50" r="3.5" fill={locked?"#d1d5db":"#fbbf24"} stroke={locked?"#c9d0db":"#92400e"} strokeWidth="1.5"/>
+        <circle cx="65" cy="50" r="3.5" fill={locked?"#d1d5db":"#f87171"} stroke={locked?"#c9d0db":"#7f1d1d"} strokeWidth="1.5"/>
+        <path d="M40 25 L42 15 L38 15 Z" fill={locked?"#d1d5db":"#fde047"}/>
+        <text x="40" y="73" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#064e3b"}>PAC. CREST</text>
+      </svg>),
+    laugavegur:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#67e8f9"/><stop offset="100%" stopColor="#0891b2"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#lg)"} stroke={locked?"#d1d5db":"#164e63"} strokeWidth="3"/>
+        <ellipse cx="40" cy="48" rx="20" ry="8" fill={locked?"#d1d5db":"#a5f3fc"} opacity="0.7"/>
+        <path d="M22 48 Q30 30 38 35 Q44 20 52 30 Q58 38 58 48" fill={locked?"#c9d0db":"#0e7490"} opacity="0.6"/>
+        <circle cx="30" cy="35" r="4" fill={locked?"#d1d5db":"#fbbf24"} opacity="0.9"/>
+        <path d="M28 30 Q30 26 32 30" stroke={locked?"#d1d5db":"#fef9c3"} strokeWidth="2" fill="none"/>
+        <path d="M50 32 Q53 24 56 30 Q60 38 52 36 Z" fill={locked?"#d1d5db":"#94a3b8"} opacity="0.7"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#164e63"}>LAUGAVEGUR</text>
+      </svg>),
+    westhighland:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="whg" cx="50%" cy="40%"><stop offset="0%" stopColor="#bef264"/><stop offset="100%" stopColor="#4d7c0f"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#whg)"} stroke={locked?"#d1d5db":"#1a2e05"} strokeWidth="3"/>
+        <path d="M14 54 Q25 46 25 35 Q30 28 35 32 L40 22 L45 32 Q50 28 55 35 Q55 46 66 54" stroke={locked?"#d1d5db":"#365314"} strokeWidth="2" fill="none"/>
+        <rect x="36" y="30" width="8" height="14" rx="1" fill={locked?"#d1d5db":"#713f12"}/>
+        <path d="M35 30 L40 22 L45 30 Z" fill={locked?"#c9d0db":"#dc2626"}/>
+        <rect x="38" y="34" width="4" height="6" rx="0.5" fill={locked?"#d1d5db":"#bef264"}/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#1a2e05"}>W. HIGHLAND</text>
+      </svg>),
+    routeburn:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><linearGradient id="rg" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#6ee7b7"/><stop offset="100%" stopColor="#059669"/></linearGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#rg)"} stroke={locked?"#d1d5db":"#064e3b"} strokeWidth="3"/>
+        <path d="M15 52 Q22 36 32 38 Q36 24 40 28 Q44 18 50 22 Q58 32 65 52" fill={locked?"#d1d5db":"#d1fae5"} opacity="0.7"/>
+        <ellipse cx="32" cy="50" rx="10" ry="5" fill={locked?"#c9d0db":"#34d399"} opacity="0.6"/>
+        <ellipse cx="55" cy="52" rx="8" ry="4" fill={locked?"#c9d0db":"#34d399"} opacity="0.6"/>
+        <path d="M38 28 Q40 20 42 28" stroke={locked?"#d1d5db":"white"} strokeWidth="2" fill="none"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#064e3b"}>ROUTEBURN</text>
+      </svg>),
+    overland:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="og" cx="50%" cy="40%"><stop offset="0%" stopColor="#fda4af"/><stop offset="100%" stopColor="#e11d48"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#og)"} stroke={locked?"#d1d5db":"#881337"} strokeWidth="3"/>
+        <path d="M14 54 L28 34 L40 44 L52 28 L66 54 Z" fill={locked?"#d1d5db":"#fff1f2"} opacity="0.85"/>
+        <ellipse cx="40" cy="54" rx="22" ry="5" fill={locked?"#c9d0db":"#fecdd3"} opacity="0.6"/>
+        <circle cx="52" cy="28" r="4" fill={locked?"#d1d5db":"#fbbf24"} stroke={locked?"#c9d0db":"#92400e"} strokeWidth="1.5"/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#881337"}>OVERLAND</text>
+      </svg>),
+    jordan:(
+      <svg width={size} height={size} viewBox="0 0 80 80">
+        <defs><radialGradient id="jg" cx="50%" cy="50%"><stop offset="0%" stopColor="#fcd34d"/><stop offset="100%" stopColor="#b45309"/></radialGradient></defs>
+        <circle cx="40" cy="40" r="36" fill={locked?"#e5e7eb":"url(#jg)"} stroke={locked?"#d1d5db":"#78350f"} strokeWidth="3"/>
+        <path d="M15 50 Q22 55 28 42 Q35 30 40 36 Q46 44 52 30 Q58 20 65 34" stroke={locked?"#d1d5db":"#92400e"} strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+        <circle cx="40" cy="36" r="6" fill={locked?"#d1d5db":"#fef3c7"} opacity="0.9" stroke={locked?"#c9d0db":"#d97706"} strokeWidth="1.5"/>
+        <path d="M38 34 L40 30 L42 34 L46 34.5 L43 37.5 L44 41 L40 39 L36 41 L37 37.5 L34 34.5 Z" fill={locked?"#d1d5db":"#d97706"}/>
+        <text x="40" y="74" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="800" fill={locked?"#9ca3af":"#78350f"}>JORDAN</text>
+      </svg>),
+  };
+  return M[trailId]||<svg width={size} height={size} viewBox="0 0 80 80"><circle cx="40" cy="40" r="36" fill="#fbbf24"/><text x="40" y="48" textAnchor="middle" fontSize="22">🏅</text></svg>;
+}
+
+// ─── RACE / PLAN DATA ─────────────────────────────────────────────────────────
+const RACES={
+  "5k":      {id:"5k",      label:"5K",           emoji:"🌱",distance:"3.1 mi",weeks:8, color:"#4ade80",pill:"#bbf7d0",pillText:"#166534",desc:"8 weeks · Beginner",    tagline:"Perfect place to start!"},
+  "10k":     {id:"10k",     label:"10K",          emoji:"⭐",distance:"6.2 mi",weeks:10,color:"#60a5fa",pill:"#bfdbfe",pillText:"#1e40af",desc:"10 weeks · Intermediate",tagline:"Level up your distance!"},
+  "half":    {id:"half",    label:"Half Marathon",emoji:"🌸",distance:"13.1 mi",weeks:12,color:"#f472b6",pill:"#fbcfe8",pillText:"#9d174d",desc:"12 weeks · Experienced", tagline:"Go the distance!"},
+  "marathon":{id:"marathon",label:"Marathon",     emoji:"🏆",distance:"26.2 mi",weeks:16,color:"#fb923c",pill:"#fed7aa",pillText:"#9a3412",desc:"16 weeks · Advanced",    tagline:"The ultimate adventure!"},
+};
+const PLAN_STRUCTURE={"5k":{runsPerWeek:3},"10k":{runsPerWeek:4},"half":{runsPerWeek:4},"marathon":{runsPerWeek:4}};
+const DEFAULT_RUN_DAYS={"5k":[0,2,4],"10k":[0,2,4,5],"half":[0,2,4,6],"marathon":[0,2,4,6]};
+const DAY_NAMES_FULL=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const DAY_NAMES_SHORT=["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+// Compact plan builders (same workouts as before)
+function g5k(){return[[{t:"First Steps! 👟",d:"Walk 5 min, then jog 60s / walk 90s × 8",dur:"20 min",dist:"1.5 mi",xp:50},{t:"You're Back! 💪",d:"Walk 5 min, then jog 60s / walk 90s × 8",dur:"20 min",dist:"1.5 mi",xp:50},{t:"Week 1 Finale! 🎉",d:"Walk 5 min, then jog 60s / walk 90s × 8",dur:"20 min",dist:"1.5 mi",xp:75}],[{t:"Push It! 🔥",d:"Walk 5 min, then jog 90s / walk 2 min × 6",dur:"25 min",dist:"1.8 mi",xp:60},{t:"Keep Rolling! 🎵",d:"Walk 5 min, then jog 90s / walk 2 min × 6",dur:"25 min",dist:"1.8 mi",xp:60},{t:"Week 2 Done! ✨",d:"Walk 5 min, then jog 90s / walk 2 min × 6",dur:"25 min",dist:"1.8 mi",xp:80}],[{t:"Mix It Up! 🎯",d:"Walk 5 min, then: 90s jog, 90s walk, 3 min jog, 3 min walk — twice!",dur:"28 min",dist:"2 mi",xp:70},{t:"Feeling Strong! 💥",d:"Walk 5 min, then: 90s jog, 90s walk, 3 min jog, 3 min walk × 2",dur:"28 min",dist:"2 mi",xp:70},{t:"Week 3 Done! 🌟",d:"Walk 5 min, then: 90s jog, 90s walk, 3 min jog, 3 min walk × 2",dur:"28 min",dist:"2 mi",xp:90}],[{t:"Getting Serious! 🏃",d:"Walk 5 min, 3 min jog, 90s walk, 5 min jog, 2.5 min walk × 2",dur:"31 min",dist:"2.4 mi",xp:80},{t:"Go Go Go! 🚀",d:"Walk 5 min, 3 min jog, 90s walk, 5 min jog, 2.5 min walk × 2",dur:"31 min",dist:"2.4 mi",xp:80},{t:"Week 4 — Nice! 🎊",d:"Walk 5 min, 3 min jog, 90s walk, 5 min jog, 2.5 min walk × 2",dur:"31 min",dist:"2.4 mi",xp:100}],[{t:"5 Minute Jogs! 🎶",d:"Walk 5 min, jog 5 min, walk 3 min — 3 times!",dur:"31 min",dist:"2.5 mi",xp:90},{t:"8 Whole Minutes! ⏱️",d:"Walk 5 min, jog 8 min, walk 5 min, jog 8 min",dur:"31 min",dist:"2.6 mi",xp:95},{t:"20 MINUTES!!! 🎉",d:"Walk 5 min warm-up, then RUN 20 minutes nonstop. YOU'VE GOT THIS!!",dur:"25 min",dist:"2.8 mi",xp:150}],[{t:"Back at It! 💫",d:"Walk 5 min, then: 5 min jog, 3 min walk, 8 min jog, 3 min walk, 5 min jog",dur:"29 min",dist:"2.7 mi",xp:90},{t:"Two 10s! 💪",d:"Walk 5 min, then run 10 min, walk 3 min, run 10 min",dur:"28 min",dist:"2.8 mi",xp:95},{t:"22 Minutes! 🌟",d:"Walk 5 min warm-up, then run 22 minutes straight!",dur:"27 min",dist:"2.9 mi",xp:120}],[{t:"25 Minutes! ⚡",d:"Walk 5 min, then run 25 minutes",dur:"30 min",dist:"3 mi",xp:110},{t:"25 Again! 🎵",d:"Walk 5 min, then run 25 minutes",dur:"30 min",dist:"3 mi",xp:110},{t:"25 Minutes Strong! 🔥",d:"Walk 5 min, run 25 min. You're basically race ready!",dur:"30 min",dist:"3 mi",xp:110}],[{t:"28 Minutes! 🏅",d:"Walk 5 min, run 28 minutes. So close!",dur:"33 min",dist:"3.1 mi",xp:120},{t:"28 More! 💫",d:"Walk 5 min, run 28 min. Picture that finish line!",dur:"33 min",dist:"3.1 mi",xp:120},{t:"YOU'RE RACE READY! 🎊",d:"Walk 5 min, then run 30 full minutes. YOU DID IT!!",dur:"35 min",dist:"3.1 mi",xp:250}]];}
+function g10k(){return[[{t:"Easy Start 🌱",d:"Walk 5 min + run 2 miles easy",dur:"28 min",dist:"2 mi",xp:60},{t:"Intervals! ⚡",d:"Walk 5 min, 4 rounds: run hard 3 min, walk 2 min",dur:"30 min",dist:"2.2 mi",xp:70},{t:"Easy Miles 🎵",d:"Run 2.5 miles easy",dur:"30 min",dist:"2.5 mi",xp:65},{t:"Long Run! 🌟",d:"Easy 3 miles",dur:"38 min",dist:"3 mi",xp:80}],[{t:"Tempo ⏱️",d:"5 min easy, 10 min steady, 5 min easy",dur:"22 min",dist:"2.3 mi",xp:75},{t:"Fartlek 🎲",d:"30 min easy with 6 random 1-min bursts",dur:"30 min",dist:"2.8 mi",xp:80},{t:"Easy Run 💫",d:"3 miles easy",dur:"36 min",dist:"3 mi",xp:70},{t:"Long Run! 🌅",d:"3.5 miles easy",dur:"42 min",dist:"3.5 mi",xp:90}],[{t:"Hills 🏔️",d:"Walk 5 min, 6 rounds: run uphill 90s, walk back",dur:"32 min",dist:"2.5 mi",xp:85},{t:"Easy Miles 🎶",d:"3 miles relaxed",dur:"36 min",dist:"3 mi",xp:70},{t:"Tempo ⚡",d:"5 min easy, 15 min steady, 5 min easy",dur:"27 min",dist:"2.8 mi",xp:85},{t:"Long Run! 🌿",d:"4 miles easy",dur:"48 min",dist:"4 mi",xp:100}],[{t:"Intervals! 🔥",d:"Walk 5 min, 5 rounds: run 4 min, walk 2 min",dur:"35 min",dist:"3 mi",xp:90},{t:"Easy Run 🎵",d:"3.5 miles easy",dur:"42 min",dist:"3.5 mi",xp:80},{t:"Tempo ⏱️",d:"5 min easy, 20 min steady, 5 min easy",dur:"32 min",dist:"3.3 mi",xp:95},{t:"Long Run! ⭐",d:"4.5 miles easy",dur:"54 min",dist:"4.5 mi",xp:110}],[{t:"Easy 4 Mi 🌸",d:"4 easy miles",dur:"48 min",dist:"4 mi",xp:85},{t:"Fartlek! 🎲",d:"35 min easy with 8 random pickups",dur:"35 min",dist:"3.5 mi",xp:90},{t:"Tempo 💪",d:"5 min easy, 25 min steady, 5 min easy",dur:"37 min",dist:"3.8 mi",xp:100},{t:"5 Miles!! 🎉",d:"Five whole miles!",dur:"60 min",dist:"5 mi",xp:120}],[{t:"Recovery 🧘",d:"Easy 3 miles",dur:"36 min",dist:"3 mi",xp:70},{t:"Intervals! ⚡",d:"Walk 5 min, 6 rounds: run 4 min, walk 90s",dur:"37 min",dist:"3.5 mi",xp:95},{t:"Easy 4 Mi 🎵",d:"4 miles easy",dur:"48 min",dist:"4 mi",xp:85},{t:"5.5 Mile Run! 🌅",d:"Your longest yet!",dur:"66 min",dist:"5.5 mi",xp:130}],[{t:"Tempo 🔥",d:"5 min easy, 30 min steady, 5 min easy",dur:"42 min",dist:"4.2 mi",xp:105},{t:"Easy 4 Mi 😊",d:"Nice easy 4 miles",dur:"48 min",dist:"4 mi",xp:80},{t:"Intervals! ⚡",d:"Walk 5 min, 4 rounds: run 5 min, walk 2 min",dur:"33 min",dist:"3.5 mi",xp:100},{t:"6 Miles! 🎊",d:"Almost race distance!",dur:"72 min",dist:"6 mi",xp:140}],[{t:"Shakeout 🌱",d:"Easy 3 miles, feeling good",dur:"36 min",dist:"3 mi",xp:70},{t:"Tune-Up! 🎵",d:"Easy 2 miles + 4 strides",dur:"24 min",dist:"2 mi",xp:65},{t:"Rest Up 🛋️",d:"Rest — save those legs!",dur:"—",dist:"—",xp:10,isRest:true},{t:"RACE DAY! 🎉",d:"Run your 10K! You are SO ready!",dur:"62 min",dist:"6.2 mi",xp:300}]];}
+function ghalf(){return[[{t:"Easy 4 Mi 🌱",d:"Comfortable 4 miles",dur:"48 min",dist:"4 mi",xp:90},{t:"Intervals ⚡",d:"4 rounds: run hard 4 min, easy 2 min",dur:"32 min",dist:"3.5 mi",xp:100},{t:"Tempo ⏱️",d:"5 easy + 20 steady + 5 easy",dur:"32 min",dist:"3.5 mi",xp:100},{t:"Long Run! 🌅",d:"5 miles",dur:"60 min",dist:"5 mi",xp:130}],[{t:"Easy 4 Mi 🎵",d:"Keep it conversational!",dur:"48 min",dist:"4 mi",xp:90},{t:"Fartlek 🎲",d:"40 min easy with 8 random pickups",dur:"40 min",dist:"4 mi",xp:100},{t:"Tempo 💪",d:"5 easy + 25 steady + 5 easy",dur:"37 min",dist:"4 mi",xp:105},{t:"Long Run! ⭐",d:"6 miles",dur:"72 min",dist:"6 mi",xp:140}],[{t:"Easy 5 Mi 🌿",d:"Five easy miles",dur:"60 min",dist:"5 mi",xp:95},{t:"Intervals! 🔥",d:"5 rounds: run hard 5 min, walk 2 min",dur:"35 min",dist:"4 mi",xp:110},{t:"Tempo ⏱️",d:"5 easy + 30 steady + 5 easy",dur:"42 min",dist:"4.5 mi",xp:110},{t:"Long Run! 🌟",d:"7 miles",dur:"84 min",dist:"7 mi",xp:160}],[{t:"Easy 5 Mi 😊",d:"Nice and easy",dur:"60 min",dist:"5 mi",xp:95},{t:"Hills! 🏔️",d:"8 rounds: run up 90s, walk down",dur:"36 min",dist:"3.5 mi",xp:110},{t:"Recovery 🧘",d:"Easy 4 miles",dur:"48 min",dist:"4 mi",xp:90},{t:"Long Run! 🎉",d:"8 miles — EIGHT!",dur:"96 min",dist:"8 mi",xp:180}],[{t:"Easy 5 Mi 🌸",d:"Feeling stronger each week!",dur:"60 min",dist:"5 mi",xp:95},{t:"Intervals ⚡",d:"6 rounds: run hard 5 min, walk 2 min",dur:"42 min",dist:"5 mi",xp:115},{t:"Tempo 💫",d:"5 easy + 35 steady + 5 easy",dur:"47 min",dist:"5 mi",xp:115},{t:"Long Run! 🌅",d:"9 miles",dur:"108 min",dist:"9 mi",xp:200}],[{t:"Recovery Wk 🌿",d:"Lighter week — easy 4 miles",dur:"48 min",dist:"4 mi",xp:90},{t:"Easy Intervals 🎵",d:"4 rounds: run 3 min, easy 3 min",dur:"24 min",dist:"3 mi",xp:90},{t:"Easy Run 😌",d:"3 easy miles",dur:"36 min",dist:"3 mi",xp:80},{t:"Short Long 🌸",d:"Easy 6 miles",dur:"72 min",dist:"6 mi",xp:140}],[{t:"Easy 6 Mi ⭐",d:"Six miles easy",dur:"72 min",dist:"6 mi",xp:100},{t:"Intervals! 🔥",d:"6 rounds: run hard 5 min, walk 2 min",dur:"42 min",dist:"5 mi",xp:115},{t:"Tempo ⏱️",d:"5 easy + 40 steady + 5 easy",dur:"52 min",dist:"5.5 mi",xp:120},{t:"10 Miles!! 🎊",d:"DOUBLE DIGITS!",dur:"120 min",dist:"10 mi",xp:220}],[{t:"Easy 6 Mi 🌿",d:"Steady and strong",dur:"72 min",dist:"6 mi",xp:100},{t:"Hills! 🏔️",d:"10 rounds: run up 90s, walk down",dur:"45 min",dist:"4 mi",xp:115},{t:"Tempo 💪",d:"5 easy + 35 steady + 5 easy",dur:"47 min",dist:"5 mi",xp:115},{t:"11 Miles! 🌟",d:"So close to race distance!",dur:"132 min",dist:"11 mi",xp:240}],[{t:"Easy 6 Mi 🎵",d:"Enjoy every step!",dur:"72 min",dist:"6 mi",xp:100},{t:"Fartlek 🎲",d:"50 min with 10 random pickups",dur:"50 min",dist:"5.5 mi",xp:115},{t:"Tempo 🔥",d:"5 easy + 40 steady + 5 easy",dur:"52 min",dist:"5.5 mi",xp:120},{t:"12 Miles! 🏅",d:"You're basically a half marathoner!",dur:"144 min",dist:"12 mi",xp:260}],[{t:"Taper Begins 🌸",d:"Easy 5 miles — taper week!",dur:"60 min",dist:"5 mi",xp:95},{t:"Easy Intervals 😊",d:"4 rounds: run 3 min, easy 3 min",dur:"24 min",dist:"3 mi",xp:90},{t:"Easy 4 Mi 🌿",d:"Nice easy 4 miles",dur:"48 min",dist:"4 mi",xp:90},{t:"Recovery Long 🌅",d:"Easy 8 miles",dur:"96 min",dist:"8 mi",xp:180}],[{t:"Tune-Up 🎵",d:"Easy 4 miles",dur:"48 min",dist:"4 mi",xp:90},{t:"Strides! ⚡",d:"3 miles + 6 quick sprints",dur:"28 min",dist:"3 mi",xp:85},{t:"Easy 3 Mi 😌",d:"3 easy miles — save those legs!",dur:"36 min",dist:"3 mi",xp:80},{t:"Last Long 🌟",d:"Easy 6 miles",dur:"72 min",dist:"6 mi",xp:140}],[{t:"Shakeout 🌱",d:"Easy 3 miles — loose and relaxed!",dur:"36 min",dist:"3 mi",xp:70},{t:"Final Tune-Up ⚡",d:"2 miles + 4 short sprints",dur:"22 min",dist:"2 mi",xp:65},{t:"Rest Up! 🛋️",d:"Rest — your legs are ready!",dur:"—",dist:"—",xp:10,isRest:true},{t:"RACE DAY! 🎉",d:"13.1 miles of glory — you trained for this!",dur:"130 min",dist:"13.1 mi",xp:500}]];}
+function gmara(){return[[{t:"Easy 5 Mi 🌱",d:"Easy 5 miles",dur:"60 min",dist:"5 mi",xp:90},{t:"Intervals ⚡",d:"4 rounds: run hard 5 min, easy 2 min",dur:"33 min",dist:"4 mi",xp:100},{t:"Tempo 💪",d:"5+20 steady+5",dur:"32 min",dist:"3.5 mi",xp:100},{t:"Long Run 8 Mi 🌅",d:"8 miles easy",dur:"96 min",dist:"8 mi",xp:160}],[{t:"Easy 5 Mi 🎵",d:"Building consistency",dur:"60 min",dist:"5 mi",xp:90},{t:"Fartlek 🎲",d:"45 min easy with surges",dur:"45 min",dist:"5 mi",xp:105},{t:"Tempo ⏱️",d:"5+25 steady+5",dur:"37 min",dist:"4 mi",xp:105},{t:"Long Run 9 Mi ⭐",d:"9 miles easy",dur:"108 min",dist:"9 mi",xp:180}],[{t:"Easy 6 Mi 🌿",d:"Adding a mile!",dur:"72 min",dist:"6 mi",xp:95},{t:"Hills! 🏔️",d:"8 rounds: uphill 90s, walk back",dur:"36 min",dist:"4 mi",xp:110},{t:"Tempo 🔥",d:"5+30 steady+5",dur:"42 min",dist:"4.5 mi",xp:110},{t:"10 Miles! 🎉",d:"Double digits!",dur:"120 min",dist:"10 mi",xp:200}],[{t:"Easy 6 Mi 💪",d:"Steady 6 miles",dur:"72 min",dist:"6 mi",xp:95},{t:"Intervals ⚡",d:"5 rounds: run hard 5 min, easy 2 min",dur:"40 min",dist:"5 mi",xp:110},{t:"Tempo 💫",d:"5+35 steady+5",dur:"47 min",dist:"5 mi",xp:115},{t:"12 Miles! 🌟",d:"Incredible!",dur:"144 min",dist:"12 mi",xp:240}],[{t:"Easy 6 Mi 🎵",d:"Consistent easy running",dur:"72 min",dist:"6 mi",xp:95},{t:"Fartlek 🎲",d:"50 min with surges",dur:"50 min",dist:"5.5 mi",xp:115},{t:"Tempo ⏱️",d:"5+30 steady+5",dur:"42 min",dist:"4.5 mi",xp:110},{t:"13 Miles! 🏅",d:"Halfway to marathon!",dur:"156 min",dist:"13 mi",xp:260}],[{t:"Recovery 🌸",d:"Easy 4 miles — lighter week!",dur:"48 min",dist:"4 mi",xp:85},{t:"Easy Intervals 😊",d:"4 rounds: run 3 min, easy 3 min",dur:"24 min",dist:"3 mi",xp:90},{t:"Easy 4 Mi 🌿",d:"Recovery week!",dur:"48 min",dist:"4 mi",xp:90},{t:"Recovery Long 🌅",d:"Easy 8 miles",dur:"96 min",dist:"8 mi",xp:160}],[{t:"Easy 7 Mi ⭐",d:"7 miles easy",dur:"84 min",dist:"7 mi",xp:100},{t:"Intervals! 🔥",d:"6 rounds: run hard 5 min, easy 2 min",dur:"45 min",dist:"5.5 mi",xp:115},{t:"Tempo 💪",d:"5+40 steady+5",dur:"52 min",dist:"5.5 mi",xp:120},{t:"14 Miles! 🎊",d:"Getting serious!",dur:"168 min",dist:"14 mi",xp:280}],[{t:"Easy 7 Mi 🌿",d:"You know this distance!",dur:"84 min",dist:"7 mi",xp:100},{t:"Hills 🏔️",d:"10 rounds: uphill 90s, walk back",dur:"45 min",dist:"4.5 mi",xp:115},{t:"Tempo 🎵",d:"5+35 steady+5",dur:"47 min",dist:"5 mi",xp:115},{t:"15 Miles! 💪",d:"Incredible dedication!",dur:"180 min",dist:"15 mi",xp:300}],[{t:"Easy 7 Mi 🎵",d:"You're a real runner!",dur:"84 min",dist:"7 mi",xp:100},{t:"Fartlek 🎲",d:"55 min with surges",dur:"55 min",dist:"6 mi",xp:120},{t:"Tempo 🔥",d:"5+40 steady+5",dur:"52 min",dist:"5.5 mi",xp:120},{t:"16 Miles! 🌟",d:"Unstoppable!",dur:"192 min",dist:"16 mi",xp:320}],[{t:"Easy 8 Mi ⚡",d:"Eight miles!",dur:"96 min",dist:"8 mi",xp:105},{t:"Intervals 🔥",d:"6 rounds: run hard 5 min, easy 2 min",dur:"45 min",dist:"5.5 mi",xp:115},{t:"Tempo ⏱️",d:"5+45 steady+5",dur:"57 min",dist:"6 mi",xp:125},{t:"18 Miles! 🏅",d:"Longest run of your life!",dur:"216 min",dist:"18 mi",xp:360}],[{t:"Easy 8 Mi 💫",d:"This is YOUR distance!",dur:"96 min",dist:"8 mi",xp:105},{t:"Hills! 🏔️",d:"12 rounds: uphill 90s, walk back",dur:"54 min",dist:"5 mi",xp:120},{t:"Tempo 💪",d:"5+40 steady+5",dur:"52 min",dist:"5.5 mi",xp:120},{t:"THE 20 MILER! 🎉",d:"20 miles! You just ran 20 miles!! INCREDIBLE!",dur:"240 min",dist:"20 mi",xp:400}],[{t:"Recovery 🌸",d:"Easy 5 miles — body rebuilding!",dur:"60 min",dist:"5 mi",xp:90},{t:"Easy Intervals 😌",d:"4 rounds: run 3 min, easy 3 min",dur:"24 min",dist:"3 mi",xp:90},{t:"Easy 5 Mi 🌿",d:"Recovery is training!",dur:"60 min",dist:"5 mi",xp:90},{t:"Recovery Long 🌅",d:"Easy 12 miles",dur:"144 min",dist:"12 mi",xp:240}],[{t:"Easy 8 Mi ⭐",d:"Back to business!",dur:"96 min",dist:"8 mi",xp:105},{t:"Intervals ⚡",d:"5 rounds: run hard 5 min, easy 2 min",dur:"40 min",dist:"5 mi",xp:110},{t:"Tempo 🎵",d:"5+35 steady+5",dur:"47 min",dist:"5 mi",xp:115},{t:"Final 20 Miler! 🔥",d:"20 miles again — you KNOW you can do this!",dur:"240 min",dist:"20 mi",xp:400}],[{t:"Taper Easy 6 Mi 🌸",d:"Taper starts!",dur:"72 min",dist:"6 mi",xp:95},{t:"Easy Fartlek 🎵",d:"40 min easy with light pickups",dur:"40 min",dist:"4.5 mi",xp:100},{t:"Easy 5 Mi 🌿",d:"Less is more!",dur:"60 min",dist:"5 mi",xp:90},{t:"Taper Long 12 Mi",d:"12 miles easy",dur:"144 min",dist:"12 mi",xp:240}],[{t:"Taper Easy 4 Mi 😊",d:"Light and fresh!",dur:"48 min",dist:"4 mi",xp:85},{t:"Strides! ⚡",d:"3 miles + strides",dur:"28 min",dist:"3 mi",xp:85},{t:"Easy 3 Mi 🌱",d:"Trust your training!",dur:"36 min",dist:"3 mi",xp:80},{t:"Taper Long 8 Mi 🌸",d:"8 easy miles",dur:"96 min",dist:"8 mi",xp:160}],[{t:"Shakeout 3 Mi 🌼",d:"Easy 3 miles — loose and relaxed!",dur:"36 min",dist:"3 mi",xp:70},{t:"Final Tune-Up 🎵",d:"2 miles + 4 short sprints",dur:"22 min",dist:"2 mi",xp:65},{t:"Rest! 🛋️",d:"Rest — legs charged, mind ready!",dur:"—",dist:"—",xp:10,isRest:true},{t:"MARATHON DAY! 🏆",d:"26.2 miles — your moment of glory. GO GET IT!!",dur:"240+ min",dist:"26.2 mi",xp:1000}]];}
+
+const WEEK_SLOTS={"5k":g5k(),"10k":g10k(),"half":ghalf(),"marathon":gmara()};
+
+function buildPlan(raceId,runDays){
+  const slots=WEEK_SLOTS[raceId];
+  const sorted=[...runDays].sort((a,b)=>a-b);
+  const plan=[];
+  slots.forEach((wk,wi)=>{
+    const w=wi+1;
+    const byDay={};
+    wk.forEach((s,si)=>{if(si<sorted.length)byDay[sorted[si]]=s;});
+    for(let d=0;d<7;d++){
+      const s=byDay[d];
+      if(s){
+        if(s.isRest)plan.push({week:w,day:d+1,type:"rest",title:"Rest Up! 🛋️",desc:"Rest — your legs are ready!",duration:"—",distance:"—",xp:s.xp});
+        else plan.push({week:w,day:d+1,type:"run",title:s.t,desc:s.d,duration:s.dur,distance:s.dist,xp:s.xp});
+      } else {
+        const rt=["Rest Day 😴","Rest Day 🌿","Rest Day 🧘","Rest Day 🌼","Rest Day 💤","Rest Day 🌙","Rest Day ☀️"];
+        const rd=["Take it easy! Stretch a little.","Foam roll if you have one!","Rest days are part of training!","Hydrate and recover.","Rest, hydrate, repeat.","Almost time to run again!","Great rest day — you earned it!"];
+        plan.push({week:w,day:d+1,type:"rest",title:rt[d],desc:rd[d],duration:"—",distance:"—",xp:10});
+      }
+    }
+  });
+  return plan;
+}
+
+const BASE_BADGES=[{id:"first_run",icon:"👟",name:"First Steps",desc:"Complete your first run!",runReq:1},{id:"three_runs",icon:"🔥",name:"On a Roll",desc:"Complete 3 runs",runReq:3},{id:"ten_runs",icon:"💎",name:"10 Runs!",desc:"Log 10 runs",runReq:10},{id:"streak3",icon:"⚡",name:"3-Day Streak",desc:"3 days in a row",streakReq:3},{id:"streak7",icon:"🌈",name:"Full Week!",desc:"7-day streak",streakReq:7},{id:"level5",icon:"👑",name:"Level 5",desc:"Reach Level 5",levelReq:5}];
+const RACE_BADGES={"5k":[{id:"5k_20",icon:"🚀",name:"20 Min Straight!",desc:"Run 20 min nonstop",runReq:15},{id:"5k_done",icon:"🏅",name:"5K Finisher!",desc:"Complete the 5K plan",runReq:22}],"10k":[{id:"10k_5mi",icon:"🌟",name:"5 Mile Run!",desc:"Complete a 5-mile run",runReq:18},{id:"10k_done",icon:"🏅",name:"10K Finisher!",desc:"Complete the 10K plan",runReq:24}],"half":[{id:"half_10",icon:"💪",name:"Double Digits!",desc:"Reach 45 training miles",milesReq:45},{id:"half_done",icon:"🌟",name:"Half Marathon!",desc:"Complete the half plan",runReq:35}],"marathon":[{id:"mara_20",icon:"🔥",name:"The 20 Miler!",desc:"Reach 90 training miles",milesReq:90},{id:"mara_done",icon:"🏆",name:"Marathoner!",desc:"Complete the marathon plan",runReq:50}]};
+
+function getLevelInfo(xp){
+  const L=[0,100,250,500,900,1400,2000,2800,3800,5000,7000];
+  let lvl=1;for(let i=0;i<L.length;i++){if(xp>=L[i])lvl=i+1;}
+  const curr=L[Math.min(lvl-1,L.length-1)];
+  const next=L[Math.min(lvl,L.length-1)];
+  const pct=next>curr?Math.round(((xp-curr)/(next-curr))*100):100;
+  return{lvl,curr,next,pct};
+}
+
+const STYLE=`
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Fredoka+One&display=swap');
+  :root{--bg:#fafaf8;--white:#fff;--border:#e8e4df;--text:#2d2a26;--muted:#9e9890;--gold:#f59e0b;--gold-bg:#fef9ee;--shadow:0 2px 12px rgba(0,0,0,0.07);--shadow-lg:0 4px 24px rgba(0,0,0,0.10);--fh:'Fredoka One',cursive;--fb:'Nunito',sans-serif;--r:20px;--rs:12px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100vh;}
+  .app{max-width:440px;margin:0 auto;padding:0 0 88px 0;min-height:100vh;background:var(--bg);}
+
+  .sel{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:48px 20px 40px;background:linear-gradient(160deg,#fff9f0 0%,#f0faf5 50%,#f5f0ff 100%);}
+  .sel-logo{font-family:var(--fh);font-size:36px;margin-bottom:4px;}
+  .sel-sub{font-size:15px;color:var(--muted);margin-bottom:40px;font-weight:600;}
+  .sel-h{font-family:var(--fh);font-size:20px;margin-bottom:6px;}
+  .sel-s{font-size:13px;color:var(--muted);margin-bottom:24px;font-weight:600;}
+  .rcards{display:flex;flex-direction:column;gap:12px;width:100%;max-width:380px;}
+  .rcard{background:var(--white);border:2px solid var(--border);border-radius:var(--r);padding:16px 18px;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);transition:transform 0.18s,box-shadow 0.18s;}
+  .rcard:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);}
+  .rc-emoji{font-size:38px;line-height:1;}
+  .rc-info{flex:1;}
+  .rc-label{font-family:var(--fh);font-size:20px;}
+  .rc-dist{font-size:13px;color:var(--muted);font-weight:600;margin-top:1px;}
+  .rc-pill{display:inline-block;font-size:11px;font-weight:800;border-radius:30px;padding:3px 10px;margin-top:6px;}
+  .rc-arrow{font-size:22px;color:var(--muted);}
+
+  .hdr{padding:16px 18px 14px;border-bottom:2px solid var(--border);background:var(--white);}
+  .hdr-r1{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .hdr-brand{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .hdr-logo{font-family:var(--fh);font-size:21px;}
+  .hdr-chip{font-size:11px;font-weight:800;padding:4px 12px;border-radius:30px;}
+  .hdr-streak{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:800;color:var(--gold);background:var(--gold-bg);border:2px solid #fde68a;border-radius:30px;padding:5px 12px;}
+  .hdr-r2{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .hdr-wk{font-family:var(--fh);font-size:16px;}
+  .hdr-lvl{font-size:12px;font-weight:800;padding:4px 12px;border-radius:30px;background:#f3f0ff;color:#7c3aed;border:2px solid #ddd6fe;}
+  .xp-row{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .xp-track{height:8px;background:#f0ede8;border-radius:999px;overflow:hidden;}
+  .xp-bar{height:100%;border-radius:999px;transition:width 0.8s cubic-bezier(0.34,1.56,0.64,1);}
+  .hdr-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+  .hdr-btn{background:none;border:2px solid var(--border);color:var(--muted);border-radius:30px;padding:5px 14px;font-size:11px;font-family:var(--fb);font-weight:700;cursor:pointer;transition:border-color 0.2s,color 0.2s;}
+  .hdr-btn:hover{border-color:#9e9890;color:var(--text);}
+
+  .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:440px;background:var(--white);border-top:2px solid var(--border);display:flex;justify-content:space-around;padding:10px 0 16px;z-index:100;}
+  .nav-btn{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;font-family:var(--fb);font-weight:800;letter-spacing:0.2px;color:var(--muted);padding:0 6px;}
+  .nav-icon{font-size:18px;line-height:1;}
+
+  .sec{padding:16px;}
+  .sec-t{font-family:var(--fh);font-size:17px;margin-bottom:12px;}
+
+  .wcard{background:var(--white);border:2px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:14px;box-shadow:var(--shadow);}
+  .wc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .wc-wk{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;}
+  .wc-badge{font-size:10px;font-weight:800;padding:4px 12px;border-radius:30px;}
+  .wc-title{font-family:var(--fh);font-size:21px;margin-bottom:6px;line-height:1.2;}
+  .wc-desc{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px;font-weight:600;}
+  .wc-stats{display:flex;gap:12px;margin-bottom:16px;}
+  .wc-stat{flex:1;background:var(--bg);border:2px solid var(--border);border-radius:var(--rs);padding:10px;text-align:center;}
+  .wc-sv{font-family:var(--fh);font-size:17px;}
+  .wc-sl{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:1px;}
+  .wc-btn{width:100%;padding:15px;border:none;border-radius:var(--rs);font-family:var(--fh);font-size:17px;color:white;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;box-shadow:0 4px 14px rgba(0,0,0,0.15);}
+  .wc-btn:hover{transform:translateY(-2px);}
+  .wc-done{text-align:center;padding:13px;font-family:var(--fh);font-size:16px;}
+
+  /* TRAIL HOME CARD */
+  .trail-home-card{border-radius:var(--r);padding:14px 16px;margin-bottom:14px;border:2px solid;cursor:pointer;box-shadow:var(--shadow);transition:transform 0.15s;}
+  .trail-home-card:hover{transform:translateY(-2px);}
+  .thc-top{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+  .thc-info{flex:1;}
+  .thc-name{font-family:var(--fh);font-size:16px;}
+  .thc-sub{font-size:11px;font-weight:700;color:var(--muted);margin-top:2px;}
+  .thc-pct{font-family:var(--fh);font-size:20px;}
+  .pbar{height:8px;background:rgba(0,0,0,0.08);border-radius:999px;overflow:hidden;}
+  .pfill{height:100%;border-radius:999px;transition:width 0.8s ease;}
+  .pbar-label{display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--muted);margin-top:4px;}
+  .pick-trail-card{background:var(--white);border:2px dashed var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px;text-align:center;cursor:pointer;transition:border-color 0.2s;}
+  .pick-trail-card:hover{border-color:#9e9890;}
+
+  /* WEEK STRIP */
+  .wk-card{background:var(--white);border:2px solid var(--border);border-radius:var(--r);padding:4px 14px;box-shadow:var(--shadow);}
+  .wk-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .wk-row:last-child{border-bottom:none;}
+  .wk-dot{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;}
+  .wk-info{flex:1;}
+  .wk-title{font-size:13px;font-weight:800;}
+  .wk-sub{font-size:11px;color:var(--muted);font-weight:600;}
+  .wk-xp{font-size:12px;font-weight:800;color:var(--gold);}
+
+  /* LOG */
+  .le{background:var(--white);border:2px solid var(--border);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);}
+  .le-icon{font-size:26px;}
+  .le-info{flex:1;}
+  .le-t{font-size:13px;font-weight:800;}
+  .le-s{font-size:11px;color:var(--muted);font-weight:600;margin-top:2px;}
+  .le-xp{font-size:13px;font-weight:800;color:var(--gold);}
+
+  /* STATS */
+  .ring-wrap{display:flex;justify-content:center;margin-bottom:16px;}
+  .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .pstat{background:var(--white);border:2px solid var(--border);border-radius:var(--rs);padding:14px;text-align:center;box-shadow:var(--shadow);}
+  .pstat-v{font-family:var(--fh);font-size:26px;}
+  .pstat-l{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;}
+
+  /* BADGES */
+  .bgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px;}
+  .bcard{background:var(--white);border:2px solid var(--border);border-radius:var(--rs);padding:14px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;box-shadow:var(--shadow);}
+  .bcard.earned{border-color:#fde68a;background:#fef9ee;}
+  .bcard.locked{opacity:0.45;}
+  .b-icon{font-size:28px;line-height:1;}
+  .b-name{font-size:11px;font-weight:800;line-height:1.2;}
+  .b-desc{font-size:9px;font-weight:600;color:var(--muted);}
+  .b-earned{font-size:9px;font-weight:800;color:var(--gold);}
+
+  /* PLAN */
+  .pwcard{background:var(--white);border:2px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:var(--shadow);}
+  .pwc-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .pwc-t{font-family:var(--fh);font-size:15px;}
+  .pwc-c{font-size:11px;font-weight:800;color:var(--muted);}
+  .pbsm{height:6px;background:var(--border);border-radius:999px;overflow:hidden;margin-bottom:10px;}
+  .pbf{height:100%;border-radius:999px;}
+  .pdr{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+  .pdr:last-child{border-bottom:none;}
+  .pdr-dot{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;}
+  .pdr-info{flex:1;}
+  .pdr-t{font-size:12px;font-weight:800;}
+  .pdr-s{font-size:10px;font-weight:600;color:var(--muted);}
+  .pdr-xp{font-size:11px;font-weight:800;color:var(--gold);}
+
+  /* TRAILS SCREEN */
+  .trails-list{display:flex;flex-direction:column;gap:12px;}
+  .trail-row{background:var(--white);border:2px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--shadow);display:flex;align-items:center;gap:12px;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;}
+  .trail-row:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+  .trail-row.active{border-width:3px;}
+  .tr-info{flex:1;min-width:0;}
+  .tr-name{font-family:var(--fh);font-size:15px;line-height:1.2;}
+  .tr-country{font-size:11px;color:var(--muted);font-weight:700;margin-top:1px;}
+  .tr-pills{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .tr-pill{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;}
+  .tr-prog{margin-top:8px;}
+  .tr-earned{font-size:11px;font-weight:800;color:var(--gold);margin-top:4px;}
+
+  /* MODAL */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:300;display:flex;align-items:flex-end;justify-content:center;}
+  .modal{background:var(--white);border-radius:28px 28px 0 0;padding:24px 20px 36px;width:100%;max-width:440px;box-shadow:0 -8px 40px rgba(0,0,0,0.15);max-height:90vh;overflow-y:auto;}
+  .m-handle{width:40px;height:4px;background:var(--border);border-radius:999px;margin:0 auto 20px;}
+  .m-title{font-family:var(--fh);font-size:22px;text-align:center;margin-bottom:6px;}
+  .m-sub{font-size:13px;color:var(--muted);font-weight:600;text-align:center;margin-bottom:20px;line-height:1.5;}
+  .day-picker{display:flex;gap:8px;justify-content:center;margin-bottom:20px;flex-wrap:wrap;}
+  .day-btn{width:44px;height:54px;border-radius:14px;border:2px solid var(--border);background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:var(--fb);font-weight:800;font-size:13px;color:var(--muted);transition:all 0.15s;}
+  .day-btn.sel{color:white;border-color:transparent;box-shadow:0 3px 10px rgba(0,0,0,0.15);}
+  .day-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:0.5;}
+  .m-warn{font-size:12px;color:#ef4444;font-weight:700;text-align:center;margin-bottom:14px;min-height:18px;}
+  .m-save{width:100%;padding:14px;border:none;border-radius:var(--rs);font-family:var(--fh);font-size:17px;color:white;cursor:pointer;transition:transform 0.15s;}
+  .m-save:hover{transform:translateY(-2px);}
+  .m-save:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+  .m-cancel{width:100%;padding:12px;border:2px solid var(--border);border-radius:var(--rs);background:none;font-family:var(--fh);font-size:15px;color:var(--muted);cursor:pointer;margin-top:8px;}
+
+  /* TRAIL DETAIL MODAL */
+  .td-medal{display:flex;justify-content:center;margin-bottom:16px;}
+  .td-title{font-family:var(--fh);font-size:23px;text-align:center;margin-bottom:3px;}
+  .td-country{font-size:13px;color:var(--muted);font-weight:700;text-align:center;margin-bottom:14px;}
+  .td-desc{font-size:13px;font-weight:600;color:var(--muted);line-height:1.6;margin-bottom:16px;text-align:center;}
+  .td-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;}
+  .tds{background:var(--bg);border:2px solid var(--border);border-radius:var(--rs);padding:10px;text-align:center;}
+  .tds-v{font-family:var(--fh);font-size:17px;}
+  .tds-l{font-size:9px;font-weight:800;color:var(--muted);text-transform:uppercase;}
+  .td-congrats{background:#fef9ee;border:2px solid #fde68a;border-radius:var(--rs);padding:14px;text-align:center;margin-bottom:14px;}
+  .tdc-e{font-size:36px;margin-bottom:6px;}
+  .tdc-t{font-family:var(--fh);font-size:19px;color:#92400e;}
+  .tdc-s{font-size:11px;font-weight:600;color:var(--muted);margin-top:3px;}
+
+  /* LEVEL UP */
+  .lu-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .lu-card{background:var(--white);border-radius:28px;padding:36px 28px;text-align:center;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.2);animation:luIn 0.5s cubic-bezier(0.34,1.56,0.64,1);}
+  @keyframes luIn{from{opacity:0;transform:scale(0.7) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
+  .lu-emoji{font-size:64px;margin-bottom:12px;line-height:1;animation:luB 0.6s 0.3s both;}
+  @keyframes luB{0%{transform:scale(0)}60%{transform:scale(1.2)}100%{transform:scale(1)}}
+  .lu-lvl{font-family:var(--fh);font-size:28px;margin-bottom:4px;}
+  .lu-title{font-family:var(--fh);font-size:18px;color:var(--muted);margin-bottom:12px;}
+  .lu-msg{font-size:14px;color:var(--muted);font-weight:600;line-height:1.6;margin-bottom:24px;}
+  .lu-btn{padding:14px 36px;border:none;border-radius:30px;font-family:var(--fh);font-size:16px;color:white;cursor:pointer;}
+
+  /* SCHEDULE INFO STRIP */
+  .sched-strip{background:var(--bg);border:2px solid var(--border);border-radius:var(--rs);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;}
+  .sched-edit{font-size:11px;font-weight:800;padding:6px 14px;border-radius:30px;border:2px solid;cursor:pointer;background:none;font-family:var(--fb);}
+
+  /* TOAST */
+  .toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);padding:12px 22px;border-radius:30px;font-family:var(--fh);font-size:15px;z-index:400;white-space:nowrap;animation:tIn 0.4s cubic-bezier(0.34,1.56,0.64,1);box-shadow:0 8px 28px rgba(0,0,0,0.14);color:white;}
+  @keyframes tIn{from{opacity:0;transform:translateX(-50%) scale(0.7) translateY(-12px)}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)}}
+
+  /* LEVEL REWARDS LIST */
+  .lv-row{background:var(--white);border:2px solid var(--border);border-radius:var(--rs);padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+  .lv-row.reached{border-color:#fde68a;background:#fef9ee;}
+  .lv-row.locked{opacity:0.5;}
+`;
+
+function RunApp() {
+  // ── PERSISTENT STATE — trails/xp/streak survive race/schedule changes ──────
+  const load = (k,def) => { try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):def;}catch{return def;} };
+  const save = (k,v) => { try{localStorage.setItem(k,JSON.stringify(v));}catch{} };
+
+  // These reset when race changes
+  const [selectedRace, setSelectedRace] = useState(()=>load("rq5_race",null));
+  const [runDays,       setRunDays]       = useState(()=>load("rq5_rundays",null));
+  const [completed,     setCompleted]     = useState(()=>load("rq5_done",[]));
+
+  // These NEVER reset — survive everything
+  const [xp,           setXp]           = useState(()=>load("rq5_xp",0));
+  const [streak,       setStreak]       = useState(()=>load("rq5_streak",0));
+  const [activeTrailId,setActiveTrailId]= useState(()=>load("rq5_trail",null));
+  const [trailMiles,   setTrailMiles]   = useState(()=>load("rq5_trailmi",0));
+  const [earnedTrails, setEarnedTrails] = useState(()=>load("rq5_earnedtr",[]));
+
+  const [tab,           setTab]         = useState("today");
+  const [toast,         setToast]       = useState(null);
+  const [toastTimer,    setToastTimer]  = useState(null);
+  const [showSched,     setShowSched]   = useState(false);
+  const [draftDays,     setDraftDays]   = useState(null);
+  const [levelUpPopup,  setLevelUpPopup]= useState(null);
+  const [trailDetail,   setTrailDetail] = useState(null);
+
+  useEffect(()=>{ save("rq5_race",selectedRace); },[selectedRace]);
+  useEffect(()=>{ save("rq5_rundays",runDays); },[runDays]);
+  useEffect(()=>{ save("rq5_done",completed); },[completed]);
+  useEffect(()=>{ save("rq5_xp",xp); },[xp]);
+  useEffect(()=>{ save("rq5_streak",streak); },[streak]);
+  useEffect(()=>{ save("rq5_trail",activeTrailId); },[activeTrailId]);
+  useEffect(()=>{ save("rq5_trailmi",trailMiles); },[trailMiles]);
+  useEffect(()=>{ save("rq5_earnedtr",earnedTrails); },[earnedTrails]);
+
+  function showToast(msg,color){
+    if(toastTimer)clearTimeout(toastTimer);
+    setToast({msg,color});
+    const t=setTimeout(()=>setToast(null),2600);
+    setToastTimer(t);
+  }
+
+  // Changing race only resets training progress — NOT xp/streak/trails
+  function changeRace(id){
+    setSelectedRace(id); setRunDays(null); setCompleted([]); setTab("today");
+  }
+
+  // Changing schedule only resets training progress — NOT xp/streak/trails
+  function saveSchedule(){
+    setRunDays([...draftDays].sort((a,b)=>a-b));
+    setCompleted([]);
+    setShowSched(false);
+    showToast("Schedule updated! 🎉","#4ade80");
+  }
+
+  function toggleDraftDay(d){
+    const n=PLAN_STRUCTURE[selectedRace].runsPerWeek;
+    setDraftDays(prev=>prev.includes(d)?(prev.length<=n?prev:prev.filter(x=>x!==d)):(prev.length>=n?prev:[...prev,d]));
+  }
+
+  // ── RACE SELECTOR ──────────────────────────────────────────────────────────
+  if(!selectedRace){
+    return (
+      <>
+        <style>{STYLE}</style>
+        <div className="sel">
+          <div className="sel-logo">🏃‍♀️ RunQuest</div>
+          <div className="sel-sub">Your friendly training buddy!</div>
+          <div className="sel-h">What's your goal? 🎯</div>
+          <div className="sel-s">Pick a race and let's train together!</div>
+          <div className="rcards">
+            {Object.values(RACES).map(r=>(
+              <div className="rcard" key={r.id} style={{borderColor:r.color+"55"}} onClick={()=>changeRace(r.id)}>
+                <div className="rc-emoji">{r.emoji}</div>
+                <div className="rc-info">
+                  <div className="rc-label" style={{color:r.color}}>{r.label}</div>
+                  <div className="rc-dist">{r.distance} · {r.tagline}</div>
+                  <div className="rc-pill" style={{background:r.pill,color:r.pillText}}>{r.desc}</div>
+                </div>
+                <div className="rc-arrow">›</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const race=RACES[selectedRace];
+  const c=race.color;
+  const struct=PLAN_STRUCTURE[selectedRace];
+  const effDays=runDays||DEFAULT_RUN_DAYS[selectedRace];
+  const PLAN=buildPlan(selectedRace,effDays);
+  const ALL_BADGES=[...BASE_BADGES,...(RACE_BADGES[selectedRace]||[])];
+
+  const totalMiles=completed.reduce((acc,i)=>acc+(PLAN[i]?.distance!=="—"?parseFloat(PLAN[i]?.distance)||0:0),0);
+  const runCount=completed.filter(i=>PLAN[i]?.type==="run").length;
+  const curIdx=(()=>{for(let i=0;i<PLAN.length;i++){if(!completed.includes(i))return i;}return PLAN.length-1;})();
+  const today=PLAN[curIdx];
+  const todayDone=completed.includes(curIdx);
+  const {lvl,pct,next}=getLevelInfo(xp);
+
+  function completeDay(){
+    if(todayDone)return;
+    const newDone=[...completed,curIdx];
+    const newXp=xp+today.xp;
+    const newStreak=streak+1;
+    const newRunCount=newDone.filter(i=>PLAN[i]?.type==="run").length;
+    const newMiles=newDone.reduce((acc,i)=>acc+(PLAN[i]?.distance!=="—"?parseFloat(PLAN[i]?.distance)||0:0),0);
+    const prevLvl=getLevelInfo(xp).lvl;
+    const newLvl=getLevelInfo(newXp).lvl;
+    setCompleted(newDone); setXp(newXp); setStreak(newStreak);
+
+    // Trail progress
+    if(today.type==="run"&&activeTrailId){
+      const dist=parseFloat(today.distance)||0;
+      const newTM=trailMiles+dist;
+      setTrailMiles(newTM);
+      const tr=TRAILS.find(t=>t.id===activeTrailId);
+      if(tr&&newTM>=tr.miles&&!earnedTrails.includes(activeTrailId)){
+        setEarnedTrails(prev=>[...prev,activeTrailId]);
+        setTimeout(()=>showToast(`🏅 Medal earned: ${tr.name}!`,"#f59e0b"),600);
+      }
+    }
+
+    if(newLvl>prevLvl&&LEVEL_REWARDS[newLvl]){
+      setTimeout(()=>setLevelUpPopup({lvl:newLvl,...LEVEL_REWARDS[newLvl]}),500);
+    } else {
+      const badge=ALL_BADGES.find(b=>{
+        if(b.runReq&&newRunCount===b.runReq&&runCount<b.runReq)return true;
+        if(b.streakReq&&newStreak===b.streakReq&&streak<b.streakReq)return true;
+        if(b.levelReq&&getLevelInfo(newXp).lvl>=b.levelReq&&lvl<b.levelReq)return true;
+        if(b.milesReq&&newMiles>=b.milesReq&&totalMiles<b.milesReq)return true;
+        return false;
+      });
+      if(badge)setTimeout(()=>showToast(`${badge.icon} New badge: ${badge.name}!`,c),400);
+      else showToast(`+${today.xp} XP ${today.type==="rest"?"😴":"🎉"}`,c);
+    }
+  }
+
+  const earnedIds=ALL_BADGES.filter(b=>{
+    if(b.runReq&&runCount>=b.runReq)return true;
+    if(b.streakReq&&streak>=b.streakReq)return true;
+    if(b.levelReq&&lvl>=b.levelReq)return true;
+    if(b.milesReq&&totalMiles>=b.milesReq)return true;
+    return false;
+  }).map(b=>b.id);
+
+  const maxWeek=Math.max(...PLAN.map(d=>d.week));
+  const weeks=[];for(let w=1;w<=maxWeek;w++)weeks.push(PLAN.filter(d=>d.week===w));
+  const curWeek=today.week;
+  const weekDays=PLAN.filter(d=>d.week===curWeek);
+  const weekStart=PLAN.findIndex(d=>d.week===curWeek);
+
+  function dotSty(isDone,isCur,isRest){
+    if(isDone)return{background:c+"25",color:c,border:`2px solid ${c}`,fontSize:14};
+    if(isCur)return{background:c,color:"white",border:`2px solid ${c}`,boxShadow:`0 2px 12px ${c}66`};
+    if(isRest)return{background:"#f5f2ee",color:"#ccc",border:"2px dashed #e0dbd4"};
+    return{background:"#f0ede8",color:"#ccc",border:"2px solid #e8e4df"};
+  }
+
+  const draftCnt=draftDays?.length||0;
+  const draftOk=draftCnt===struct.runsPerWeek;
+  const draftWarn=draftDays?(draftCnt<struct.runsPerWeek?`Pick ${struct.runsPerWeek-draftCnt} more`:draftCnt>struct.runsPerWeek?`Remove ${draftCnt-struct.runsPerWeek}`:""):"";
+
+  const activeTrail=TRAILS.find(t=>t.id===activeTrailId);
+  const trailPct=activeTrail?Math.min(100,Math.round((trailMiles/activeTrail.miles)*100)):0;
+
+  return (
+    <>
+      <style>{STYLE}</style>
+      {toast&&<div className="toast" style={{background:toast.color}}>{toast.msg}</div>}
+
+      {/* LEVEL UP */}
+      {levelUpPopup&&(
+        <div className="lu-overlay" onClick={()=>setLevelUpPopup(null)}>
+          <div className="lu-card" onClick={e=>e.stopPropagation()} style={{borderTop:`6px solid ${c}`}}>
+            <div className="lu-emoji">{levelUpPopup.emoji}</div>
+            <div className="lu-lvl" style={{color:c}}>Level {levelUpPopup.lvl}!</div>
+            <div className="lu-title">{levelUpPopup.title}</div>
+            <div className="lu-msg">{levelUpPopup.msg}</div>
+            <button className="lu-btn" style={{background:c}} onClick={()=>setLevelUpPopup(null)}>Let's go! 🎉</button>
+          </div>
+        </div>
+      )}
+
+      {/* SCHEDULE MODAL */}
+      {showSched&&draftDays&&(
+        <div className="overlay" onClick={()=>setShowSched(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="m-handle"/>
+            <div className="m-title">Customize Schedule 📅</div>
+            <div className="m-sub">Choose your <strong>{struct.runsPerWeek} run days</strong>.<br/>Your XP, trails, and streaks are safe — only training progress resets.</div>
+            <div className="day-picker">
+              {DAY_NAMES_FULL.map((_,i)=>{
+                const s=draftDays.includes(i);
+                return <div key={i} className={`day-btn ${s?"sel":""}`} style={s?{background:c}:{}} onClick={()=>toggleDraftDay(i)}>{DAY_NAMES_SHORT[i]}<div className="day-dot"/></div>;
+              })}
+            </div>
+            <div className="m-warn">{draftWarn}</div>
+            <button className="m-save" style={{background:c}} disabled={!draftOk} onClick={saveSchedule}>Save Schedule ✓</button>
+            <button className="m-cancel" onClick={()=>setShowSched(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* TRAIL DETAIL MODAL */}
+      {trailDetail&&(()=>{
+        const t=TRAILS.find(x=>x.id===trailDetail);if(!t)return null;
+        const tMi=activeTrailId===t.id?trailMiles:0;
+        const tP=Math.min(100,Math.round((tMi/t.miles)*100));
+        const earned=earnedTrails.includes(t.id);
+        const isActive=activeTrailId===t.id;
+        return (
+          <div className="overlay" onClick={()=>setTrailDetail(null)}>
+            <div className="modal" onClick={e=>e.stopPropagation()}>
+              <div className="m-handle"/>
+              <div className="td-medal"><MedalSVG trailId={t.id} size={110} earned={earned} progress={tP}/></div>
+              <div className="td-title" style={{color:t.color}}>{t.name}</div>
+              <div className="td-country">{t.country}</div>
+              <div className="td-desc">{t.desc}</div>
+              <div className="td-stats">
+                <div className="tds"><div className="tds-v" style={{color:t.color}}>{t.miles}</div><div className="tds-l">Miles</div></div>
+                <div className="tds"><div className="tds-v" style={{color:t.color,fontSize:13}}>{t.difficulty}</div><div className="tds-l">Level</div></div>
+                <div className="tds"><div className="tds-v" style={{color:t.color,fontSize:13}}>{t.days}</div><div className="tds-l">Duration</div></div>
+              </div>
+              {earned?(
+                <div className="td-congrats">
+                  <div className="tdc-e">🏅</div>
+                  <div className="tdc-t">Medal Earned!</div>
+                  <div className="tdc-s">You ran the full {t.miles} miles of {t.name}!</div>
+                </div>
+              ):(
+                <div style={{marginBottom:18}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,color:"var(--muted)",marginBottom:6}}>
+                    <span>{isActive?"Progress":"Not started"}</span>
+                    <span>{isActive?`${tMi.toFixed(1)} / ${t.miles} mi`:""}</span>
+                  </div>
+                  <div className="pbar" style={{height:10}}><div className="pfill" style={{width:`${tP}%`,background:t.color}}/></div>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",marginTop:4,textAlign:"right"}}>{tP}%</div>
+                </div>
+              )}
+              {!isActive&&!earned&&(
+                <button className="m-save" style={{background:t.color}} onClick={()=>{
+                  setActiveTrailId(t.id);setTrailMiles(0);setTrailDetail(null);
+                  showToast(`Trail selected: ${t.name}! 🥾`,t.color);
+                }}>Set as Active Trail 🥾</button>
+              )}
+              {isActive&&!earned&&<div style={{textAlign:"center",padding:"12px 0",fontFamily:"var(--fh)",color:t.color,fontSize:15}}>✓ Active trail!</div>}
+              <button className="m-cancel" onClick={()=>setTrailDetail(null)}>Close</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      <div className="app">
+        {/* HEADER */}
+        <div className="hdr">
+          <div className="hdr-r1">
+            <div className="hdr-brand">
+              <div className="hdr-logo">🏃‍♀️ RunQuest</div>
+              <div className="hdr-chip" style={{background:race.pill,color:race.pillText}}>{race.emoji} {race.label}</div>
+            </div>
+            <div className="hdr-streak">🔥 {streak} day{streak!==1?"s":""}</div>
+          </div>
+          <div className="hdr-r2">
+            <div className="hdr-wk">Week {today.week} · Day {today.day}</div>
+            <div className="hdr-lvl">⚡ Level {lvl}</div>
+          </div>
+          <div className="xp-row"><span>{xp} XP</span><span>Next level: {next} XP</span></div>
+          <div className="xp-track"><div className="xp-bar" style={{width:`${pct}%`,background:`linear-gradient(90deg,${c},${c}bb)`}}/></div>
+          <div className="hdr-btns">
+            <button className="hdr-btn" onClick={()=>setSelectedRace(null)}>← Change goal</button>
+            <button className="hdr-btn" style={{borderColor:c+"66",color:c}} onClick={()=>{setDraftDays([...effDays]);setShowSched(true);}}>📅 Edit schedule</button>
+          </div>
+        </div>
+
+        {/* TODAY TAB */}
+        {tab==="today"&&(
+          <div className="sec">
+            <div className="sec-t">Today's Workout 👇</div>
+
+            {/* Trail medal on home screen */}
+            {activeTrail?(
+              <div className="trail-home-card" style={{background:activeTrail.bg,borderColor:earnedTrails.includes(activeTrail.id)?"#fde68a":activeTrail.color+"44"}} onClick={()=>setTrailDetail(activeTrail.id)}>
+                <div className="thc-top">
+                  <MedalSVG trailId={activeTrail.id} size={52} earned={earnedTrails.includes(activeTrail.id)} progress={trailPct}/>
+                  <div className="thc-info">
+                    <div className="thc-name" style={{color:activeTrail.color}}>{activeTrail.name}</div>
+                    <div className="thc-sub">{activeTrail.country} · {activeTrail.miles} mi total</div>
+                  </div>
+                  <div className="thc-pct" style={{color:activeTrail.color}}>{trailPct}%</div>
+                </div>
+                <div className="pbar"><div className="pfill" style={{width:`${trailPct}%`,background:activeTrail.color}}/></div>
+                <div className="pbar-label">
+                  <span>{trailMiles.toFixed(1)} mi run</span>
+                  <span>{Math.max(0,activeTrail.miles-trailMiles).toFixed(1)} mi to go</span>
+                </div>
+              </div>
+            ):(
+              <div className="pick-trail-card" onClick={()=>setTab("trails")}>
+                <div style={{fontSize:32,marginBottom:6}}>🏅</div>
+                <div style={{fontFamily:"var(--fh)",fontSize:16,color:"var(--muted)"}}>Pick a World Trail!</div>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--muted)",marginTop:4}}>Your runs count toward earning a medal</div>
+              </div>
+            )}
+
+            <div className="sched-strip">
+              <div style={{fontSize:18}}>📅</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:800}}>Run days: <strong>{effDays.map(d=>DAY_NAMES_FULL[d]).join(", ")}</strong></div>
+                <div style={{fontSize:11,color:"var(--muted)",fontWeight:600}}>{struct.runsPerWeek} runs/week · {race.weeks} weeks total</div>
+              </div>
+              <button className="sched-edit" style={{borderColor:c+"66",color:c}} onClick={()=>{setDraftDays([...effDays]);setShowSched(true);}}>Edit</button>
+            </div>
+
+            <div className="wcard" style={{borderColor:c+"44"}}>
+              <div className="wc-top">
+                <span className="wc-wk">Week {today.week} · {DAY_NAMES_FULL[(today.day-1)%7]}</span>
+                <span className="wc-badge" style={today.type==="run"?{background:race.pill,color:race.pillText}:{background:"#f5f2ee",color:"#9e9890"}}>{today.type==="run"?"🏃 Run Day":"😴 Rest Day"}</span>
+              </div>
+              <div className="wc-title">{today.title}</div>
+              <div className="wc-desc">{today.desc}</div>
+              {today.type==="run"&&(
+                <div className="wc-stats">
+                  <div className="wc-stat"><div className="wc-sv" style={{color:c}}>{today.duration}</div><div className="wc-sl">Duration</div></div>
+                  <div className="wc-stat"><div className="wc-sv" style={{color:c}}>{today.distance}</div><div className="wc-sl">Distance</div></div>
+                  <div className="wc-stat"><div className="wc-sv" style={{color:"#f59e0b"}}>+{today.xp}</div><div className="wc-sl">XP</div></div>
+                </div>
+              )}
+              {todayDone
+                ?<div className="wc-done" style={{color:c}}>✅ Done! Amazing work today!</div>
+                :<button className="wc-btn" style={{background:c}} onClick={completeDay}>{today.type==="run"?"✓ Mark Complete!":"✓ Rest Day Done!"}</button>
+              }
+            </div>
+
+            <div className="sec-t">This Week 📅</div>
+            <div className="wk-card">
+              {weekDays.map((d,i)=>{
+                const idx=weekStart+i;
+                const isDone=completed.includes(idx);
+                const isCur=idx===curIdx;
+                return (
+                  <div className="wk-row" key={i}>
+                    <div className="wk-dot" style={dotSty(isDone,isCur,d.type==="rest")}>{isDone?"✓":DAY_NAMES_SHORT[i%7]}</div>
+                    <div className="wk-info"><div className="wk-title">{d.title}</div><div className="wk-sub">{d.type==="run"?`${d.duration} · ${d.distance}`:"Rest & recover"}</div></div>
+                    {d.type==="run"&&<div className="wk-xp">+{d.xp} XP</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* PLAN TAB */}
+        {tab==="plan"&&(
+          <div className="sec">
+            <div className="sec-t">{race.weeks}-Week {race.label} Plan 🗓️</div>
+            {weeks.map((wDays,wi)=>{
+              const wNum=wi+1;
+              const wStart=PLAN.findIndex(d=>d.week===wNum);
+              const wDone=wDays.filter((_,i)=>completed.includes(wStart+i)).length;
+              return (
+                <div className="pwcard" key={wNum}>
+                  <div className="pwc-h"><div className="pwc-t" style={{color:wNum===curWeek?c:"var(--text)"}}>Week {wNum}{wNum===curWeek?" ← you are here":""}</div><div className="pwc-c">{wDone}/{wDays.length}</div></div>
+                  <div className="pbsm"><div className="pbf" style={{width:`${Math.round((wDone/wDays.length)*100)}%`,background:c}}/></div>
+                  {wDays.map((d,i)=>{
+                    const isDone=completed.includes(wStart+i);
+                    return (
+                      <div className="pdr" key={i}>
+                        <div className="pdr-dot" style={dotSty(isDone,false,d.type==="rest")}>{isDone?"✓":DAY_NAMES_SHORT[i%7]}</div>
+                        <div className="pdr-info"><div className="pdr-t">{d.title}</div><div className="pdr-s">{d.type==="run"?`${d.duration} · ${d.distance}`:"Rest"}</div></div>
+                        {d.type==="run"&&<div className="pdr-xp">+{d.xp}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* TRAILS TAB */}
+        {tab==="trails"&&(
+          <div className="sec">
+            <div className="sec-t">World Trail Medals 🏅</div>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--muted)",marginBottom:14,lineHeight:1.6}}>Pick a trail — every run mile you log counts toward earning its medal! 🥾</div>
+            <div className="trails-list">
+              {TRAILS.map(t=>{
+                const earned=earnedTrails.includes(t.id);
+                const isActive=activeTrailId===t.id;
+                const tMi=isActive?trailMiles:0;
+                const tP=Math.min(100,Math.round((tMi/t.miles)*100));
+                return (
+                  <div key={t.id} className={`trail-row ${isActive?"active":""}`}
+                    style={isActive?{borderColor:t.color}:{}}
+                    onClick={()=>setTrailDetail(t.id)}
+                  >
+                    <div style={{position:"relative",flexShrink:0}}>
+                      <MedalSVG trailId={t.id} size={60} earned={earned} progress={tP}/>
+                      {earned&&<div style={{position:"absolute",top:-4,right:-4,fontSize:14}}>✅</div>}
+                    </div>
+                    <div className="tr-info">
+                      <div className="tr-name" style={{color:t.color}}>{t.name}</div>
+                      <div className="tr-country">{t.country}</div>
+                      <div className="tr-pills">
+                        <span className="tr-pill" style={{background:t.bg,color:t.color,border:`1px solid ${t.color}44`}}>{t.miles} mi</span>
+                        <span className="tr-pill" style={{background:"#f5f2ee",color:"var(--muted)"}}>{ t.difficulty}</span>
+                      </div>
+                      {isActive&&!earned&&(
+                        <div className="tr-prog">
+                          <div className="pbar"><div className="pfill" style={{width:`${tP}%`,background:t.color}}/></div>
+                          <div style={{fontSize:10,fontWeight:700,color:"var(--muted)",marginTop:3,display:"flex",justifyContent:"space-between"}}><span>{tP}%</span><span>{tMi.toFixed(1)}/{t.miles} mi</span></div>
+                        </div>
+                      )}
+                      {earned&&<div className="tr-earned">🏅 Medal Earned!</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* LOG TAB */}
+        {tab==="log"&&(
+          <div className="sec">
+            <div className="sec-t">Activity Log 📋</div>
+            {completed.length===0&&<div style={{textAlign:"center",color:"var(--muted)",padding:"48px 0",fontWeight:700,fontSize:15}}>No workouts yet!<br/>🏃‍♀️ Go log your first one!</div>}
+            {[...completed].reverse().map((idx,i)=>{
+              const d=PLAN[idx];
+              return (
+                <div className="le" key={i}>
+                  <div className="le-icon">{d.type==="run"?"🏃‍♀️":"😴"}</div>
+                  <div className="le-info"><div className="le-t">{d.title}</div><div className="le-s">Wk {d.week} · {DAY_NAMES_FULL[(d.day-1)%7]}{d.type==="run"?` · ${d.distance} · ${d.duration}`:" · Rest"}</div></div>
+                  <div className="le-xp">+{d.xp} XP</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* STATS TAB */}
+        {tab==="progress"&&(
+          <div className="sec">
+            <div className="sec-t">Your Progress 📊</div>
+            <div className="ring-wrap">
+              <svg width="148" height="148" viewBox="0 0 160 160">
+                <circle cx="80" cy="80" r="66" fill="none" stroke="#f0ede8" strokeWidth="12"/>
+                <circle cx="80" cy="80" r="66" fill="none" stroke={c} strokeWidth="12"
+                  strokeDasharray={`${2*Math.PI*66}`}
+                  strokeDashoffset={`${2*Math.PI*66*(1-completed.length/PLAN.length)}`}
+                  strokeLinecap="round" transform="rotate(-90 80 80)"
+                  style={{transition:"stroke-dashoffset 1s ease"}}/>
+                <text x="80" y="71" textAnchor="middle" fill={c} fontSize="26" fontFamily="Fredoka One,cursive">{Math.round((completed.length/PLAN.length)*100)}%</text>
+                <text x="80" y="93" textAnchor="middle" fill="#9e9890" fontSize="11" fontFamily="Nunito,sans-serif" fontWeight="700">of {race.label} plan</text>
+              </svg>
+            </div>
+            <div className="pgrid">
+              <div className="pstat"><div className="pstat-v" style={{color:c}}>{runCount}</div><div className="pstat-l">Runs Done</div></div>
+              <div className="pstat"><div className="pstat-v" style={{color:c}}>{totalMiles.toFixed(1)}</div><div className="pstat-l">Miles Run</div></div>
+              <div className="pstat"><div className="pstat-v" style={{color:"#f59e0b"}}>{xp}</div><div className="pstat-l">Total XP</div></div>
+              <div className="pstat"><div className="pstat-v" style={{color:"#f59e0b"}}>{streak}</div><div className="pstat-l">Streak 🔥</div></div>
+            </div>
+            <div className="sec-t" style={{marginTop:20}}>Level Rewards 🎁</div>
+            {Object.entries(LEVEL_REWARDS).map(([l,r])=>{
+              const reached=lvl>=parseInt(l);
+              return (
+                <div key={l} className={`lv-row ${reached?"reached":"locked"}`}>
+                  <div style={{fontSize:26}}>{r.emoji}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"var(--fh)",fontSize:14,color:reached?"#92400e":"var(--muted)"}}>Lv {l}: {r.title}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:"var(--muted)"}}>{r.msg}</div>
+                  </div>
+                  {reached&&<div style={{fontSize:14}}>✅</div>}
+                </div>
+              );
+            })}
+            <div className="sec-t" style={{marginTop:20}}>Badges 🏅</div>
+            <div className="bgrid">
+              {ALL_BADGES.map(b=>{
+                const e=earnedIds.includes(b.id);
+                return (
+                  <div className={`bcard ${e?"earned":"locked"}`} key={b.id}>
+                    <div className="b-icon">{b.icon}</div>
+                    <div className="b-name">{b.name}</div>
+                    <div className="b-desc">{b.desc}</div>
+                    {e&&<div className="b-earned">✓ Earned!</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* NAV */}
+        <nav className="nav">
+          {[{id:"today",icon:"🏃‍♀️",l:"Today"},{id:"plan",icon:"📅",l:"Plan"},{id:"trails",icon:"🏅",l:"Trails"},{id:"log",icon:"📋",l:"Log"},{id:"progress",icon:"📊",l:"Stats"}].map(n=>(
+            <button key={n.id} className="nav-btn" style={tab===n.id?{color:c}:{}} onClick={()=>setTab(n.id)}>
+              <span className="nav-icon">{n.icon}</span>{n.l}
+            </button>
+          ))}
+        </nav>
+      </div>
+    </>
+  );
+}
+
+    const rootEl = document.getElementById('root');
+    const appRoot = ReactDOM.createRoot(rootEl);
+    appRoot.render(<RunApp />);
+    setTimeout(() => {
+      const loader = document.getElementById('loading');
+      if (loader) loader.classList.add('done');
+      setTimeout(() => { if (loader) loader.remove(); }, 500);
+    }, 100);
+  </script>
+</body>
+</html>
